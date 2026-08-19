@@ -94,4 +94,49 @@ def _add_seniority(query: str, seniority: str) -> str:
     if term.lower() not in query.lower():
         return f"{term} {query}"
     return query
+
  
+#  Main Entry Point
+ 
+def optimize_queries(
+    search_queries: list,
+    top_skills: list,
+    location: str,
+    seniority: str,
+    employment_type: Optional[str] = None,
+) -> list:
+    results = []
+    seen_urls = set()
+ 
+    for raw_query in search_queries:
+        # Step 1: Enhance with skills + location
+        enhanced = _enhance_query(raw_query, top_skills, location, seniority)
+ 
+        # Step 2: Add seniority prefix
+        enhanced = _add_seniority(enhanced, seniority)
+ 
+        # Step 3: Add employment type if specified
+        if employment_type and employment_type.lower() == "remote":
+            if "remote" not in enhanced.lower():
+                enhanced = f"{enhanced} remote"
+ 
+        # Step 4: Build URLs for each job board
+        board_urls = [
+            ("Google Jobs",  _google_jobs_url(enhanced, location)),
+            ("Indeed",       _indeed_url(enhanced, location)),
+            ("LinkedIn",     _linkedin_url(enhanced, location)),
+            ("Rozee.pk",     _rozee_url(enhanced, location)),
+            ("Mustakbil",    _mustakbil_url(enhanced)),
+            ("Glassdoor",    _glassdoor_url(enhanced, location)),
+        ]
+ 
+        for board, url in board_urls:
+            if url not in seen_urls:
+                seen_urls.add(url)
+                results.append({
+                    "query": enhanced,
+                    "board": board,
+                    "url":   url,
+                })
+ 
+    return results
