@@ -94,4 +94,34 @@ TITLE_KEYWORDS = [
     "intern", "junior developer", "senior developer",
     "associate engineer", "graduate trainee",
 ]
+
+# Location Keywords 
  
+CITIES = [
+    # Original list
+    "karachi", "lahore", "islamabad", "rawalpindi", "faisalabad", "multan",
+    "peshawar", "quetta", "hyderabad", "sialkot",
+    "new york", "san francisco", "seattle", "austin", "boston", "chicago",
+    "london", "toronto", "dubai", "singapore", "berlin", "amsterdam",
+    "remote", "on-site", "hybrid", "work from home", "wfh",
+    
+    # United Kingdom & Ireland
+    "manchester", "birmingham", "edinburgh", "glasgow", "leeds", "bristol", "dublin", "cork",
+    
+    # North America (US & Canada Expansion)
+    "los angeles", "denver", "washington dc", "atlanta", "miami", "dallas", "houston", 
+    "vancouver", "montreal", "calgary", "ottawa",
+    
+    # Australia & New Zealand
+    "sydney", "melbourne", "brisbane", "perth", "auckland", "wellington",
+    
+    # European Tech Hubs (English Speaking Business)
+    "frankfurt", "munich", "paris", "zurich", "stockholm", "copenhagen", "oslo", "tallinn",
+    
+    # Middle East, Africa & Asia-Pacific Business Hubs
+    "abu dhabi", "riyadh", "cape town", "johannesburg", "hong kong", "manila", "kuala lumpur",
+    "bangalore", "mumbai", "pune", "chennai", "delhi",
+    
+    # Additional Remote/Flex Keywords
+    "anywhere", "worldwide", "global remote", "flexible"
+]
