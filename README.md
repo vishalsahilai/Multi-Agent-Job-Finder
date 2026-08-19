@@ -617,9 +617,9 @@ Browser closed
 
 ## Author
 
-**Muhammad Saad Nisar** — AI Developer
+**Vishal Sahil** — AI Developer
 
-- 🐙 [github.com/msncoder](https://github.com/msncoder)
+- 🐙 [github.com/vishalsahilai](https://github.com/vishalsahilai)
 
 ---
 
