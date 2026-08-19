@@ -55,7 +55,7 @@ PRE-EXTRACTED DATA (Python):
  
 Using the resume text and pre-extracted data above, return the JSON structure."""
 
-# ── LLM Client ───────────────────────────────────────────────────────────────
+# LLM Client 
  
 def _get_llm(api_key: str) -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(
@@ -64,4 +64,29 @@ def _get_llm(api_key: str) -> ChatGoogleGenerativeAI:
         temperature=0.1,        # low temp = consistent structured output
         max_tokens=600,         # enough for the JSON, no fluff
     )
+
+#  Response Parser 
+ 
+def _parse_response(raw: str) -> dict:
+    """
+    Safely parse JSON from LLM response.
+    Strips markdown fences if present.
+    Falls back to empty structure on failure.
+    """
+    # Strip ```json ... ``` or ``` ... ``` wrappers
+    cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
+ 
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        # Try to find JSON object inside the text
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+ 
+    return {}
+ 
  
