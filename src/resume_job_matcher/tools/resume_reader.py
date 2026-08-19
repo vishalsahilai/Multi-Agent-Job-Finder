@@ -23,3 +23,20 @@ def _read_pdf(file: Union[str, Path, bytes]) -> str:
             pages.append(text)
  
     return "\n".join(pages)
+
+#  DOCX
+ 
+def _read_docx(file: Union[str, Path, bytes]) -> str:
+    """Extract text from a DOCX file or bytes object."""
+    try:
+        from docx import Document
+    except ImportError:
+        raise ImportError("python-docx is required: pip install python-docx")
+ 
+    if isinstance(file, (str, Path)):
+        doc = Document(str(file))
+    else:
+        doc = Document(io.BytesIO(file))
+ 
+    paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]
+    return "\n".join(paragraphs)
