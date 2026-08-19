@@ -45,4 +45,32 @@ def _glassdoor_url(query: str, location: str = "") -> str:
 def _mustakbil_url(query: str) -> str:
     # Mustakbil.com — another major Pakistan job board
     return f"https://mustakbil.com/jobs/?search={quote_plus(query)}"
+
+#  Query Enhancer 
+ 
+def _enhance_query(
+    base_query: str,
+    top_skills: list,
+    location: str,
+    seniority: str,
+) -> str:
+    """
+    Append location and key skills to base query to make it more targeted.
+    Example: 'Python Developer' → 'Python Developer Django FastAPI Karachi'
+    """
+    parts = [base_query.strip()]
+ 
+    # Add up to 2 top skills not already in query
+    query_lower = base_query.lower()
+    added_skills = 0
+    for skill in top_skills:
+        if skill.lower() not in query_lower and added_skills < 2:
+            parts.append(skill)
+            added_skills += 1
+ 
+    # Add location if not already present
+    if location and location.lower() not in query_lower:
+        parts.append(location)
+ 
+    return " ".join(parts)
  
