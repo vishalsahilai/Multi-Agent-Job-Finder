@@ -125,3 +125,132 @@ CITIES = [
     # Additional Remote/Flex Keywords
     "anywhere", "worldwide", "global remote", "flexible"
 ]
+
+#  Extractor Functions
+ 
+def extract_email(text: str) -> Optional[str]:
+    pattern = r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
+    match = re.search(pattern, text)
+    return match.group(0) if match else None
+ 
+ 
+def extract_phone(text: str) -> Optional[str]:
+    # Matches common formats: +92-300-1234567, (021) 1234567, 03001234567, etc.
+    pattern = r"(\+?\d{1,3}[\s\-]?)?(\(?\d{2,4}\)?[\s\-]?)(\d{3,4}[\s\-]?\d{3,4})"
+    match = re.search(pattern, text)
+    return match.group(0).strip() if match else None
+ 
+ 
+def extract_years_of_experience(text: str) -> Optional[int]:
+    """
+    Detects patterns like:
+    - '5 years of experience'
+    - '3+ years'
+    - 'experience: 2 years'
+    - Date ranges like '2019 - 2024' → 5 years
+    """
+    # Explicit mention
+    pattern = r"(\d+)\+?\s*years?\s*(of\s*)?(experience|exp)"
+    match = re.search(pattern, text, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+ 
+    # Infer from date ranges (e.g., Jan 2019 – Dec 2023)
+    year_pattern = r"\b(20\d{2}|19\d{2})\b"
+    years_found = [int(y) for y in re.findall(year_pattern, text)]
+    if len(years_found) >= 2:
+        min_year = min(years_found)
+        max_year = max(years_found)
+        if 1990 <= min_year <= 2026 and max_year >= min_year:
+            return max_year - min_year
+ 
+    return None
+ 
+ 
+def extract_skills(text: str) -> dict:
+    """
+    Returns matched skills grouped by category.
+    Also returns a flat list of all matched skills.
+    """
+    text_lower = text.lower()
+    matched = {}
+    all_matched = []
+ 
+    for category, skills in SKILLS.items():
+        found = []
+        for skill in skills:
+            # Word boundary match to avoid partial matches (e.g., 'c' in 'science')
+            if re.search(r"\b" + re.escape(skill) + r"\b", text_lower):
+                found.append(skill)
+        if found:
+            matched[category] = found
+            all_matched.extend(found)
+ 
+    return {
+        "by_category": matched,
+        "all": list(dict.fromkeys(all_matched)),  # preserve order, remove dupes
+    }
+ 
+ 
+def extract_job_title(text: str) -> Optional[str]:
+    """
+    Finds the most likely current/target job title from resume text.
+    Prioritizes titles found near the top (first 500 chars) of the resume.
+    """
+    text_lower = text.lower()
+    top_section = text_lower[:500]
+ 
+    # Try top section first
+    for title in TITLE_KEYWORDS:
+        if re.search(r"\b" + re.escape(title) + r"\b", top_section):
+            return title.title()
+ 
+    # Fallback: search full text
+    for title in TITLE_KEYWORDS:
+        if re.search(r"\b" + re.escape(title) + r"\b", text_lower):
+            return title.title()
+ 
+    return None
+ 
+ 
+def extract_location(text: str) -> Optional[str]:
+    text_lower = text.lower()
+    for city in CITIES:
+        if re.search(r"\b" + re.escape(city) + r"\b", text_lower):
+            return city.title()
+    return None
+ 
+ 
+def extract_name(text: str) -> Optional[str]:
+    """
+    Best-effort name extraction: assumes first non-empty line is the candidate name
+    if it looks like a name (2-4 words, no digits, no special chars).
+    """
+    for line in text.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        words = line.split()
+        if 2 <= len(words) <= 4 and all(w.replace(".", "").isalpha() for w in words):
+            return line
+        break  # Only check the very first non-empty line
+    return None
+ 
+ 
+def extract_education(text: str) -> list:
+    """Extract degree keywords found in resume."""
+    degrees = [
+        "bachelor", "b.s.", "b.sc", "b.e.", "b.tech", "bsc", "be",
+        "master", "m.s.", "m.sc", "m.e.", "m.tech", "msc", "mba",
+        "phd", "ph.d", "doctorate",
+        "associate", "diploma", "certification", "certified",
+        "computer science", "information technology", "software engineering",
+        "data science", "electrical engineering", "mathematics",
+    ]
+    text_lower = text.lower()
+    found = []
+    for deg in degrees:
+        if re.search(r"\b" + re.escape(deg) + r"\b", text_lower):
+            found.append(deg)
+    return found
+ 
