@@ -253,4 +253,18 @@ def extract_education(text: str) -> list:
         if re.search(r"\b" + re.escape(deg) + r"\b", text_lower):
             found.append(deg)
     return found
+
+#  Main Entry Point 
  
+def extract_keywords(resume_text: str) -> dict:
+
+    return {
+        "name":      extract_name(resume_text),
+        "email":     extract_email(resume_text),
+        "phone":     extract_phone(resume_text),
+        "location":  extract_location(resume_text),
+        "job_title": extract_job_title(resume_text),
+        "years_exp": extract_years_of_experience(resume_text),
+        "skills":    extract_skills(resume_text),
+        "education": extract_education(resume_text),
+    }
