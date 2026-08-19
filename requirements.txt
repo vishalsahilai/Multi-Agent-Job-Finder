@@ -39,3 +39,6 @@ streamlit==1.45.1
 #Utilities
 urllib3==2.4.0
 chardet==5.2.0
+
+#After install, also run:
+#playwright install chromium
