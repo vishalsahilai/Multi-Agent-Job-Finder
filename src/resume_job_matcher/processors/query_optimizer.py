@@ -73,4 +73,25 @@ def _enhance_query(
         parts.append(location)
  
     return " ".join(parts)
+
+#  Seniority Filter Map 
+ 
+SENIORITY_TERMS = {
+    "Intern":     ["intern", "internship", "trainee"],
+    "Junior":     ["junior", "entry level", "associate", "jr"],
+    "Mid-Level":  [],   # no modifier — keep query clean
+    "Senior":     ["senior", "sr"],
+    "Lead":       ["lead", "staff", "principal"],
+}
+ 
+ 
+def _add_seniority(query: str, seniority: str) -> str:
+    terms = SENIORITY_TERMS.get(seniority, [])
+    if not terms:
+        return query
+    term = terms[0]
+    # Only prepend if not already in query
+    if term.lower() not in query.lower():
+        return f"{term} {query}"
+    return query
  
