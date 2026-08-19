@@ -73,4 +73,25 @@ SKILLS = {
  
 # Flatten for fast lookup
 ALL_SKILLS_FLAT = {skill for category in SKILLS.values() for skill in category}
+
+#  Job Title Patterns
+ 
+TITLE_KEYWORDS = [
+    "software engineer", "software developer", "web developer", "backend developer",
+    "frontend developer", "full stack developer", "fullstack developer",
+    "mobile developer", "android developer", "ios developer",
+    "data scientist", "data engineer", "data analyst", "ml engineer",
+    "machine learning engineer", "ai engineer", "nlp engineer",
+    "devops engineer", "cloud engineer", "sre", "site reliability engineer",
+    "security engineer", "cybersecurity", "network engineer",
+    "product manager", "project manager", "scrum master",
+    "ui/ux designer", "ux designer", "ui designer",
+    "qa engineer", "test engineer", "automation engineer",
+    "tech lead", "technical lead", "engineering manager",
+    "solutions architect", "cloud architect", "system architect",
+    "python developer", "java developer", "javascript developer",
+    "node.js developer", "react developer", "django developer",
+    "intern", "junior developer", "senior developer",
+    "associate engineer", "graduate trainee",
+]
  
