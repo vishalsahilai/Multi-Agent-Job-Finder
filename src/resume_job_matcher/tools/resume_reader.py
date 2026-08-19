@@ -40,3 +40,58 @@ def _read_docx(file: Union[str, Path, bytes]) -> str:
  
     paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]
     return "\n".join(paragraphs)
+
+#  Text Cleaner
+ 
+def _clean_text(text: str) -> str:
+    """
+    Normalize and clean extracted resume text:
+    - Fix encoding artifacts (e.g. â€™ → ')
+    - Remove null bytes and control characters
+    - Collapse 3+ blank lines into 2
+    - Strip trailing whitespace per line
+    - Normalize bullet characters to '-'
+    """
+    if not text:
+        return ""
+ 
+    # Remove null bytes and non-printable control chars (keep \n \t)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+ 
+    # Fix common UTF-8 mojibake artifacts
+    replacements = {
+        "\u2019": "'",   # right single quotation mark
+        "\u2018": "'",   # left single quotation mark
+        "\u201c": '"',   # left double quotation mark
+        "\u201d": '"',   # right double quotation mark
+        "\u2013": "-",   # en dash
+        "\u2014": "-",   # em dash
+        "\u2022": "-",   # bullet
+        "\u2023": "-",   # triangular bullet
+        "\u25cf": "-",   # black circle bullet
+        "\u00a0": " ",   # non-breaking space
+        "\ufeff": "",    # BOM
+    }
+    for bad, good in replacements.items():
+        text = text.replace(bad, good)
+ 
+    # Normalize bullet-like characters at line start
+    text = re.sub(r"^[\*\•\·\◦\▪\▸\►\-–—]\s*", "- ", text, flags=re.MULTILINE)
+ 
+    # Strip trailing whitespace per line
+    lines = [line.rstrip() for line in text.split("\n")]
+ 
+    # Collapse more than 2 consecutive blank lines into 2
+    cleaned_lines = []
+    blank_count = 0
+    for line in lines:
+        if line.strip() == "":
+            blank_count += 1
+            if blank_count <= 2:
+                cleaned_lines.append("")
+        else:
+            blank_count = 0
+            cleaned_lines.append(line)
+ 
+    return "\n".join(cleaned_lines).strip()
+ 
