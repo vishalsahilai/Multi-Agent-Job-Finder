@@ -88,5 +88,34 @@ def _parse_response(raw: str) -> dict:
                 pass
  
     return {}
+
+#  Fallback (if LLM fails)
+ 
+def _build_fallback(extracted: dict) -> dict:
+    """
+    Build a basic response from Python-extracted data alone.
+    Used when LLM call fails or returns unparseable output.
+    """
+    title = extracted.get("job_title") or "Software Developer"
+    skills = extracted.get("skills", {}).get("all", [])
+    top_skills = skills[:8] if skills else ["Python", "Software Development"]
+    location = extracted.get("location") or ""
+ 
+    loc_suffix = f" {location}" if location else ""
+ 
+    queries = [
+        f"{title}{loc_suffix}",
+        f"{' '.join(top_skills[:3])} developer{loc_suffix}",
+        f"{title} jobs",
+    ]
+ 
+    return {
+        "candidate_role": title,
+        "seniority": "Mid-Level",
+        "top_skills": top_skills,
+        "search_queries": queries,
+        "summary": f"Candidate with skills in {', '.join(top_skills[:5])}.",
+        "_fallback": True,
+    }
  
  
