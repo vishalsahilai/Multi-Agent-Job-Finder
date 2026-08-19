@@ -118,4 +118,56 @@ def _build_fallback(extracted: dict) -> dict:
         "_fallback": True,
     }
  
+# Main Entry Point
+ 
+def analyze_resume(
+    resume_text: str,
+    extracted_keywords: dict,
+    api_key: str,
+) -> dict:
+    """
+    Single LLM call to analyze resume and generate search queries.
+ 
+    Args:
+        resume_text:        Cleaned text from Stage 1.
+        extracted_keywords: Dict from Stage 2 keyword_extractor.
+        api_key:            Gemini API key.
+ 
+    Returns:
+        {
+            "candidate_role":  str,
+            "seniority":       str,
+            "top_skills":      list[str],
+            "search_queries":  list[str],   ← used directly in Stage 4
+            "summary":         str,
+            "_fallback":       bool          ← True only if LLM failed
+        }
+    """
+    try:
+        llm = _get_llm(api_key)
+        messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=_build_user_prompt(resume_text, extracted_keywords)),
+        ]
+        response = llm.invoke(messages)
+        raw_text = response.content
+ 
+        parsed = _parse_response(raw_text)
+ 
+        # Validate required keys exist
+        required = {"candidate_role", "top_skills", "search_queries"}
+        if not required.issubset(parsed.keys()):
+            raise ValueError(f"Missing keys in LLM response: {required - parsed.keys()}")
+ 
+        # Ensure search_queries is a list of 3
+        queries = parsed.get("search_queries", [])
+        if not isinstance(queries, list) or len(queries) == 0:
+            raise ValueError("search_queries missing or empty")
+ 
+        parsed["_fallback"] = False
+        return parsed
+ 
+    except Exception as e:
+        print(f"[Analyzer] LLM call failed: {e}. Using Python fallback.")
+        return _build_fallback(extracted_keywords)
  
