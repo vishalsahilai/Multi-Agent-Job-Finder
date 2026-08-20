@@ -45,7 +45,7 @@ with st.sidebar:
     # API Key
     api_key = st.text_input(
         "Gemini API Key",
-        value=os.getenv("GEMINI_API_KEY", ""),
+        value=st.secrets.get("GEMINI_API_KEY", ""),
         type="password",
         help="Get your key at https://aistudio.google.com/app/apikey",
     )

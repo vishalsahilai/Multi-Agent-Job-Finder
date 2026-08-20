@@ -11,3 +11,4 @@ venv/
 data/sample_resumes/*
 !data/sample_resumes/.gitkeep
 
+.streamlit/secrets.toml
