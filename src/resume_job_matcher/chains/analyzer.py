@@ -59,9 +59,8 @@ Using the resume text and pre-extracted data above, return the JSON structure.""
  
 def _get_llm(api_key: str) -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(
-        model="gemini-3-flash",
-        google_api_key=api_key,
-        temperature=0.1,        # low temp = consistent structured output
+        model="gemini-3.6-flash",
+        google_api_key=api_key,       
         max_tokens=600,         # enough for the JSON, no fluff
     )
 
