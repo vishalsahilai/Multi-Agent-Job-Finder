@@ -1,350 +1,308 @@
-import json
 import os
-import re
-import tempfile
-from pathlib import Path
-import pandas as pd
+import logging
+from datetime import date, timedelta
+
 import streamlit as st
+from dotenv import load_dotenv
 
-# --- Pipeline Components Import ---
-from src.tools.resume_reader import read_resume
-from src.chains.analyzer import analyzer_chain
-from src.agents.job_search_agent import job_search_agent
-from src.agents.job_scraper_agent import job_scraper_agent
-from src.processors.job_result_processor import process_jobs, get_job_statistics
+from src.resume_job_matcher.pipeline import run_pipeline
 
-# =========================================================
-# PAGE CONFIG & STYLING
-# =========================================================
+#  Config 
+
+load_dotenv()
+logging.basicConfig(level=logging.INFO)
+
 st.set_page_config(
-    page_title="Resume → AI Job Matcher",
-    page_icon="🚀",
+    page_title="AI Job Finder",
+    page_icon="💼",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.markdown(
-    """
-    <style>
-    .stApp { background: #0f172a; color: #f8fafc; }
-    .main-title { font-size: 36px; font-weight: 800; margin-bottom: 5px; color: #f8fafc; }
-    .subtitle { font-size: 15px; color: #94a3b8; margin-bottom: 25px; }
-    .metric-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 15px; text-align: center; }
-    .metric-value { font-size: 26px; font-weight: 800; color: #38bdf8; }
-    .metric-label { color: #94a3b8; font-size: 13px; }
-    .job-card { background: #1e293b; border: 1px solid #334155; border-radius: 14px; padding: 20px; margin-bottom: 15px; }
-    .job-title { font-size: 19px; font-weight: 700; color: #f1f5f9; }
-    .job-company { color: #60a5fa; font-size: 14px; margin-top: 4px; font-weight: 600; }
-    .job-description { color: #cbd5e1; line-height: 1.6; margin-top: 10px; font-size: 14px; }
-    .badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; margin: 3px; }
-    .badge-blue { background: #1e3a8a; color: #93c5fd; border: 1px solid #3b82f6; }
-    .badge-cyan { background: #164e63; color: #67e8f9; border: 1px solid #06b6d4; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+#  Styles 
 
-# =========================================================
-# SMART EXTRACTORS & PARSERS
-# =========================================================
-def _extract_agent_content(agent_result: dict) -> str:
-    """LangGraph / LangChain ke har format se text nikalta hy."""
-    if not isinstance(agent_result, dict):
-        return str(agent_result)
-
-    messages = agent_result.get("messages", [])
-    if not messages:
-        return str(agent_result)
-
-    # 1. Piche se check karein ke kis AIMessage me actual content hy
-    for msg in reversed(messages):
-        content = getattr(msg, "content", None)
-        if content is None and isinstance(msg, dict):
-            content = msg.get("content", "")
-
-        # Agar content list format me ho (Gemini / Anthropic style)
-        if isinstance(content, list):
-            parts = []
-            for p in content:
-                if isinstance(p, str):
-                    parts.append(p)
-                elif isinstance(p, dict) and "text" in p:
-                    parts.append(p["text"])
-            content = "\n".join(parts)
-
-        if isinstance(content, str) and content.strip():
-            return content.strip()
-
-    # 2. Agar AIMessage me na ho to Tool outputs collect karein
-    tool_texts = []
-    for msg in messages:
-        c = getattr(msg, "content", "")
-        if c and isinstance(c, str) and len(c) > 20:
-            tool_texts.append(c)
-    
-    if tool_texts:
-        return "\n\n".join(tool_texts)
-
-    return str(messages[-1])
+st.markdown("""
+<style>
+    .match-high   { color: #22c55e; font-weight: bold; }
+    .match-mid    { color: #f59e0b; font-weight: bold; }
+    .match-low    { color: #ef4444; font-weight: bold; }
+    .job-card     { background: #1e1e2e; border-radius: 10px; padding: 16px; margin-bottom: 12px; border: 1px solid #2d2d44; }
+    .badge        { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; margin-right: 6px; }
+    .badge-board  { background: #3b3b5c; color: #a5b4fc; }
+    .badge-type   { background: #1e3a2f; color: #6ee7b7; }
+    .stat-box     { background: #1e1e2e; border-radius: 8px; padding: 12px; text-align: center; border: 1px solid #2d2d44; }
+</style>
+""", unsafe_allow_html=True)
 
 
-def _parse_scraped_jobs(content: Any) -> list[dict]:
-    """JSON parse karne ka robust tarika."""
-    if isinstance(content, list):
-        if all(isinstance(i, dict) for i in content):
-            return content
-        content = "\n".join([i.get("text", "") for i in content if isinstance(i, dict) and "text" in i])
-
-    if not isinstance(content, str):
-        content = str(content)
-
-    content = content.strip()
-
-    # Markdown blocks remove
-    if "```" in content:
-        content = re.sub(r"```(?:json)?", "", content).replace("```", "").strip()
-
-    # Direct JSON try
-    try:
-        data = json.loads(content)
-        if isinstance(data, list):
-            return data
-    except Exception:
-        pass
-
-    # Regex try for [ { ... } ]
-    try:
-        match = re.search(r"(\[\s*\{.*?\}\s*\])", content, re.DOTALL)
-        if match:
-            data = json.loads(match.group(1))
-            if isinstance(data, list):
-                return data
-    except Exception:
-        pass
-
-    return []
-
-
-def _fallback_extract_jobs_from_search(search_text: str, default_role: str) -> list[dict]:
-    """
-    Agar Scraper fail ho jaye, to Tavily ke search results se direct 
-    URLs aur Job Titles extract karega taake 0 jobs na ayen.
-    """
-    jobs = []
-    # Markdown links find karein: [Title](url)
-    md_links = re.findall(r"\[(.*?)\]\((https?://[^\s\)]+)\)", search_text)
-    
-    for title, url in md_links:
-        if any(bad in url.lower() for bad in ["google.com/search", "youtube.com", "facebook.com", "wikipedia.org"]):
-            continue
-        jobs.append({
-            "title": title.strip() if len(title) > 3 else default_role,
-            "company": "Found via Search",
-            "location": "See Job Link",
-            "employment_type": "Full-time / Specified on site",
-            "description": "Job link found via Tavily Search. Direct details available at application link.",
-            "posting_date": "Recently active",
-            "url": url
-        })
-
-    # Direct URLs find karein agar markdown format me na hon
-    if not jobs:
-        urls = re.findall(r"(https?://[^\s\)\"'>]+)", search_text)
-        for idx, url in enumerate(urls[:8], 1):
-            if any(bad in url.lower() for bad in ["google.com", "tavily.com"]): continue
-            jobs.append({
-                "title": f"{default_role} Opening #{idx}",
-                "company": "Company Career Page",
-                "location": "Refer to Link",
-                "employment_type": "Full-time",
-                "description": "Extracted from search opening.",
-                "posting_date": "Active Posting",
-                "url": url
-            })
-
-    return jobs
-
-
-def _safe_read_resume(tool, path: str) -> str:
-    try:
-        res = tool.invoke({"file_path": path}) if hasattr(tool, "invoke") else tool(path)
-    except Exception:
-        res = tool.invoke(path)
-    if isinstance(res, str): return res
-    if isinstance(res, list): return "\n".join([d.page_content if hasattr(d, "page_content") else str(d) for d in res])
-    if hasattr(res, "page_content"): return res.page_content
-    return str(res)
-
-
-# =========================================================
-# UI HEADER
-# =========================================================
-st.markdown('<div class="main-title">🚀 Resume → AI Job Matcher</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">AI agent pipeline with automated fallback search recovery.</div>', unsafe_allow_html=True)
+#  Sidebar 
 
 with st.sidebar:
-    st.header("⚙️ Search Settings")
-    max_jobs = st.slider("Maximum Jobs", min_value=3, max_value=20, value=8, step=1)
+    st.title("💼 AI Job Finder")
+    st.caption("Upload your resume — we find the best matches.")
     st.divider()
 
-uploaded_file = st.file_uploader("📄 Upload Resume (PDF / DOCX)", type=["pdf", "docx"])
-start_search = st.button("🚀 Find Matching Jobs Now", type="primary", use_container_width=True)
+    # API Key
+    api_key = st.text_input(
+        "Gemini API Key",
+        value=os.getenv("GEMINI_API_KEY", ""),
+        type="password",
+        help="Get your key at https://aistudio.google.com/app/apikey",
+    )
 
-# =========================================================
-# PIPELINE EXECUTION
-# =========================================================
-if start_search:
-    if uploaded_file is None:
-        st.warning("⚠️ Please upload a resume first.")
+    st.divider()
+    st.subheader("🔧 Search Filters")
+
+    # Location
+    location = st.text_input("Location", placeholder="e.g. Karachi, Remote")
+
+    # Employment Type
+    employment_type = st.selectbox(
+        "Employment Type",
+        options=["Any", "Full-time", "Remote", "Hybrid", "On-site", "Contract"],
+    )
+    employment_type = None if employment_type == "Any" else employment_type
+
+    # Date Range
+    col1, col2 = st.columns(2)
+    with col1:
+        from_date = st.date_input("From Date", value=date.today() - timedelta(days=30))
+    with col2:
+        to_date = st.date_input("To Date", value=date.today())
+
+    # Max Results
+    max_results = st.slider("Max Job Results", min_value=10, max_value=100, value=50, step=10)
+
+    st.divider()
+    st.caption("Built with LangChain + Gemini + BeautifulSoup")
+
+
+#  Main Area 
+
+st.header("📄 Upload Your Resume")
+
+uploaded_file = st.file_uploader(
+    "Drag and drop or click to upload",
+    type=["pdf", "docx"],
+    help="PDF or DOCX only",
+)
+
+if uploaded_file:
+    st.success(f"✅ Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024:.1f} KB)")
+
+st.divider()
+
+run_btn = st.button("🚀 Find Jobs", type="primary", use_container_width=True, disabled=not uploaded_file)
+
+#  Pipeline Runner 
+
+if run_btn:
+    if not api_key:
+        st.error("❌ Please enter your Gemini API key in the sidebar.")
         st.stop()
 
-    suffix = Path(uploaded_file.name).suffix
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(uploaded_file.getbuffer())
-        resume_path = tmp.name
+    if not uploaded_file:
+        st.error("❌ Please upload a resume first.")
+        st.stop()
+
+    # Progress UI
+    st.divider()
+    st.subheader("⚙️ Pipeline Progress")
+
+    STEP_LABELS = [
+        "Reading resume",
+        "Extracting skills & keywords",
+        "Analyzing resume (AI — 1 call)",
+        "Building search URLs",
+        "Searching job boards",
+        "Filtering junk URLs",
+        "Scraping job details",
+        "Filtering by date range",
+        "Removing duplicates",
+        "Scoring & ranking jobs",
+    ]
+
+    progress_bar = st.progress(0)
+    step_cols = st.columns(5)
+    step_status = {}
+
+    # Render step placeholders
+    placeholders = []
+    rows = [st.columns(5), st.columns(5)]
+    for i, label in enumerate(STEP_LABELS):
+        row = rows[i // 5]
+        col = row[i % 5]
+        ph = col.empty()
+        ph.markdown(f"⬜ **Step {i+1}**  \n{label}")
+        placeholders.append(ph)
+
+    status_ph = st.empty()
+
+    def progress_callback(step: int, total: int, message: str):
+        pct = int((step / total) * 100)
+        progress_bar.progress(pct)
+        status_ph.info(f"**Step {step}/{total}:** {message}")
+        # Mark previous steps done
+        for i in range(step - 1):
+            placeholders[i].markdown(f"✅ **Step {i+1}**  \n{STEP_LABELS[i]}")
+        # Mark current step active
+        placeholders[step - 1].markdown(f"🔄 **Step {step}**  \n{STEP_LABELS[step-1]}")
+
+    # Run pipeline
+    with st.spinner("Running pipeline..."):
+        result = run_pipeline(
+            file=uploaded_file.getvalue(),
+            filename=uploaded_file.name,
+            gemini_api_key=api_key,
+            location=location,
+            employment_type=employment_type,
+            from_date=from_date,
+            to_date=to_date,
+            max_results=max_results,
+            progress_callback=progress_callback,
+        )
+
+    # Mark all done
+    progress_bar.progress(100)
+    status_ph.success("✅ Pipeline complete!")
+    for i, ph in enumerate(placeholders):
+        ph.markdown(f"✅ **Step {i+1}**  \n{STEP_LABELS[i]}")
+
+    #  Error Handling 
+
+    if result["status"] == "error":
+        st.error(f"❌ Pipeline error: {result['error']}")
+        st.stop()
+
+    #  Candidate Profile 
 
     st.divider()
-    st.subheader("⚡ Live Pipeline Execution")
+    st.subheader("👤 Candidate Profile")
 
-    try:
-        # --- STAGE 1 ---
-        with st.status("📄 **[1/5] Extracting Resume Text...**", expanded=False) as s1:
-            resume_text = _safe_read_resume(read_resume, resume_path)
-            st.write(f"✅ Extracted **{len(resume_text.split())} words**.")
-            s1.update(label="✅ **[1/5] Resume Extracted**", state="complete")
+    c = result["candidate"]
+    p1, p2, p3, p4 = st.columns(4)
+    p1.metric("Name",        c.get("name") or "—")
+    p2.metric("Role",        c.get("candidate_role") or "—")
+    p3.metric("Seniority",   c.get("seniority") or "—")
+    p4.metric("Experience",  f"{c['years_exp']} yrs" if c.get("years_exp") else "—")
 
-        # --- STAGE 2 ---
-        with st.status("🧠 **[2/5] Analyzing Skills & Target Roles...**", expanded=True) as s2:
-            analyzer_result = analyzer_chain.invoke({"resume": resume_text})
-            role = analyzer_result.get("role", "Software Engineer")
-            experience_level = analyzer_result.get("experience_level", "Mid Level")
-            location = analyzer_result.get("location", "Remote")
-            skills = analyzer_result.get("skills", [])
-            search_queries = analyzer_result.get("search_queries", [f"{role} jobs {location}"])
+    if c.get("top_skills"):
+        st.markdown("**Top Skills:** " + "  ".join([f"`{s}`" for s in c["top_skills"]]))
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Target Role", role)
-            c2.metric("Experience", experience_level)
-            c3.metric("Location", location)
+    if c.get("summary"):
+        with st.expander("AI Summary"):
+            st.write(c["summary"])
 
-            st.write("**Extracted Skills:**")
-            st.markdown("".join([f'<span class="badge badge-blue">{s}</span>' for s in skills[:15]]), unsafe_allow_html=True)
-            s2.update(label="✅ **[2/5] Analysis Completed**", state="complete")
-
-        # --- STAGE 3 ---
-        with st.status("🔎 **[3/5] Tavily Searching Web for Jobs...**", expanded=True) as s3:
-            search_input = f"""
-Find 5-10 real, active job postings on the web for:
-Role: {role}
-Experience: {experience_level}
-Location: {location}
-Skills: {", ".join(skills[:6])}
-Queries to try: {search_queries}
-
-Return real job posting URLs with job titles and brief details.
-"""
-            search_result = job_search_agent.invoke({"messages": [{"role": "user", "content": search_input}]})
-            search_content = _extract_agent_content(search_result)
-
-            with st.expander("🔍 Click to view Tavily Search Output", expanded=False):
-                st.write(search_content if search_content else "No raw text extracted.")
-            s3.update(label="✅ **[3/5] Web Search Completed**", state="complete")
-
-        # --- STAGE 4 ---
-        with st.status("🕷️ **[4/5] Scraping & Structuring Job Data...**", expanded=True) as s4:
-            scraper_input = f"""
-Extract structured job postings from the search results below.
-Search Content:
-{search_content}
-
-Return ONLY a valid JSON array of objects:
-[{{"title": "Job Title", "company": "Company", "location": "Location", "employment_type": "Full-time", "description": "Brief description", "posting_date": "Recent", "url": "https://..."}}]
-"""
-            scraped_result = job_scraper_agent.invoke({"messages": [{"role": "user", "content": scraper_input}]})
-            scraped_content = _extract_agent_content(scraped_result)
-            scraped_jobs = _parse_scraped_jobs(scraped_content)
-
-            # FALLBACK: Agar scraper fail ho jaye ya 0 de, to Search Content se extract karein
-            if not scraped_jobs and search_content:
-                st.info("ℹ️ Scraper agent blocked on websites. Extracting fallback jobs from search results...")
-                scraped_jobs = _fallback_extract_jobs_from_search(search_content, role)
-
-            with st.expander(f"📋 Scraper Agent Output ({len(scraped_jobs)} jobs found)", expanded=False):
-                st.text(scraped_content)
-
-            s4.update(label=f"✅ **[4/5] Scraping Completed ({len(scraped_jobs)} Jobs)**", state="complete")
-
-        # --- STAGE 5 ---
-        with st.status("⚙️ **[5/5] Processing & Filtering Results...**", expanded=False) as s5:
-            final_jobs = process_jobs(scraped_jobs, max_jobs=max_jobs) if scraped_jobs else []
-            # Agar process_jobs ne sab filter kar diya to direct scraped_jobs le lo
-            if not final_jobs and scraped_jobs:
-                final_jobs = scraped_jobs[:max_jobs]
-            statistics = get_job_statistics(final_jobs) if final_jobs else {"total_jobs": len(final_jobs), "unique_companies": len(final_jobs), "jobs_with_date": 0, "jobs_without_date": len(final_jobs)}
-            s5.update(label="✅ **[5/5] Pipeline Ready!**", state="complete")
-
-        # Save to session
-        st.session_state["pipeline_result"] = {
-            "candidate": {"role": role, "experience_level": experience_level, "location": location, "skills": skills},
-            "jobs": final_jobs,
-            "statistics": statistics
-        }
-
-    except Exception as e:
-        st.error(f"❌ Error: {str(e)}")
-        st.exception(e)
-    finally:
-        if os.path.exists(resume_path):
-            os.remove(resume_path)
-
-# =========================================================
-# FINAL RESULTS DISPLAY
-# =========================================================
-if "pipeline_result" in st.session_state:
-    res = st.session_state["pipeline_result"]
-    cand = res.get("candidate", {})
-    jobs = res.get("jobs", [])
-    stats = res.get("statistics", {})
+    #  Stats 
 
     st.divider()
-    st.subheader("📊 Match Insights")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(f'<div class="metric-card"><div class="metric-value">{len(jobs)}</div><div class="metric-label">Total Jobs Found</div></div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="metric-card"><div class="metric-value">{stats.get("unique_companies", len(jobs))}</div><div class="metric-label">Companies</div></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="metric-card"><div class="metric-value">{stats.get("jobs_with_date", 0)}</div><div class="metric-label">Dated</div></div>', unsafe_allow_html=True)
-    c4.markdown(f'<div class="metric-card"><div class="metric-value">{stats.get("jobs_without_date", len(jobs))}</div><div class="metric-label">Undated</div></div>', unsafe_allow_html=True)
+    st.subheader("📊 Pipeline Stats")
+    s = result["stats"]
+
+    s1, s2, s3, s4, s5 = st.columns(5)
+    s1.metric("URLs Found",    s.get("raw_urls_found", 0))
+    s2.metric("After Filter",  s.get("urls_after_filter", 0))
+    s3.metric("Scraped",       s.get("jobs_scraped", 0))
+    s4.metric("Unique Jobs",   s.get("jobs_after_dedup", 0))
+    s5.metric("Final Results", s.get("final_job_count", 0))
+
+    #  Results Table 
+
+    jobs = result["jobs"]
+    no_date_jobs = result["no_date_jobs"]
 
     st.divider()
     st.subheader(f"🎯 Matched Jobs ({len(jobs)})")
 
-    if not jobs:
-        st.error("No jobs could be extracted. Please check if Tavily Search returned valid URLs in Stage [3/5].")
-    else:
-        df = pd.DataFrame(jobs)
-        st.download_button("📥 Download Results CSV", df.to_csv(index=False), "jobs.csv", "text/csv")
-        st.write("")
+    if not jobs and not no_date_jobs:
+        st.warning("No jobs found. Try adjusting the date range, location, or employment type.")
+        st.stop()
 
-        for idx, job in enumerate(jobs, 1):
-            st.markdown(
-                f"""
-                <div class="job-card">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                        <div>
-                            <div class="job-title">{idx}. {job.get('title', 'Job Opening')}</div>
-                            <div class="job-company">🏢 {job.get('company', 'Company')} &nbsp;•&nbsp; 📍 {job.get('location', 'Location')}</div>
-                        </div>
-                        <span class="badge badge-cyan">{job.get('employment_type', 'Full-time')}</span>
-                    </div>
-                    <div style="margin-top: 8px; color: #94a3b8; font-size: 13px;">📅 <b>Posted:</b> {job.get('posting_date', 'Recently Active')}</div>
-                    <div class="job-description">{job.get('description', 'Job opportunity matched from web search.')}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            if job.get("url"):
-                st.link_button(f"🔗 Apply Now ↗", job["url"])
-            st.write("")
+    def render_jobs(job_list: list):
+        for job in job_list:
+            pct = job.get("match_percent", 0)
+            if pct >= 70:
+                pct_html = f'<span class="match-high">{pct}%</span>'
+            elif pct >= 40:
+                pct_html = f'<span class="match-mid">{pct}%</span>'
+            else:
+                pct_html = f'<span class="match-low">{pct}%</span>'
 
-    if st.button("🗑️ Clear & Restart"):
-        del st.session_state["pipeline_result"]
-        st.rerun()
+            board_badge = f'<span class="badge badge-board">{job.get("board", "")}</span>'
+            type_badge  = f'<span class="badge badge-type">{job.get("employment_type", "")}</span>' if job.get("employment_type") else ""
+
+            st.markdown(f"""
+<div class="job-card">
+  <div style="display:flex; justify-content:space-between; align-items:start;">
+    <div>
+      <strong style="font-size:16px;">{job.get("title", "Unknown Title")}</strong><br>
+      <span style="color:#94a3b8;">{job.get("company", "Unknown Company")} &nbsp;·&nbsp; {job.get("location", "—")}</span><br>
+      <small style="color:#64748b;">📅 {job.get("date_display", "Date Unknown")}</small>
+    </div>
+    <div style="text-align:right;">
+      <span style="font-size:22px;">{pct_html}</span><br>
+      <small>match</small>
+    </div>
+  </div>
+  <div style="margin-top:8px;">{board_badge}{type_badge}</div>
+  <div style="margin-top:10px;">
+    <a href="{job.get('job_url', '#')}" target="_blank">
+      <button style="background:#4f46e5;color:white;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;">
+        View Job →
+      </button>
+    </a>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+            with st.expander("Score breakdown"):
+                bd = job.get("score_breakdown", {})
+                bc1, bc2, bc3 = st.columns(3)
+                bc1.metric("Title Match",    f"{bd.get('title_match', 0)} pts")
+                bc1.metric("Skill Match",    f"{bd.get('skill_match', 0)} pts")
+                bc2.metric("Keyword Match",  f"{bd.get('keyword_match', 0)} pts")
+                bc2.metric("Location Match", f"{bd.get('location_match', 0)} pts")
+                bc3.metric("Seniority",      f"{bd.get('seniority_match', 0)} pts")
+                bc3.metric("Emp. Type",      f"{bd.get('employment_type', 0)} pts")
+
+    render_jobs(jobs)
+
+    #  No-Date Jobs Section 
+    if no_date_jobs:
+        st.divider()
+        with st.expander(f"📋 Jobs with Unknown Date ({len(no_date_jobs)}) — shown separately"):
+            render_jobs(no_date_jobs)
+
+    #  Download CSV 
+
+    st.divider()
+    if jobs or no_date_jobs:
+        import csv
+        import io
+
+        all_jobs = jobs + no_date_jobs
+        csv_buf = io.StringIO()
+        writer = csv.DictWriter(csv_buf, fieldnames=[
+            "title", "company", "location", "date_display",
+            "employment_type", "match_percent", "board", "job_url"
+        ])
+        writer.writeheader()
+        for j in all_jobs:
+            writer.writerow({
+                "title":           j.get("title", ""),
+                "company":         j.get("company", ""),
+                "location":        j.get("location", ""),
+                "date_display":    j.get("date_display", ""),
+                "employment_type": j.get("employment_type", ""),
+                "match_percent":   j.get("match_percent", ""),
+                "board":           j.get("board", ""),
+                "job_url":         j.get("job_url", ""),
+            })
+
+        st.download_button(
+            label="⬇️ Download Results as CSV",
+            data=csv_buf.getvalue(),
+            file_name="job_results.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
