@@ -33,4 +33,34 @@ BLOCKED_DOMAINS = {
     # Other
     "pastebin.com", "gist.github.com", "notion.so", "slack.com",
 }
+
+ 
+#  Allowed Job Board Domains (whitelist) 
+ 
+ALLOWED_JOB_DOMAINS = {
+    "linkedin.com",
+    "indeed.com",
+    "rozee.pk",
+    "mustakbil.com",
+    "glassdoor.com",
+    "naukri.com",
+    "monster.com",
+    "ziprecruiter.com",
+    "simplyhired.com",
+    "careerbuilder.com",
+    "jobs.google.com",
+    "workcircle.com",
+    "bayt.com",           # Middle East + Pakistan
+    "gulftalent.com",
+    "bestjobs.pk",
+    "jobsinpakistan.com",
+    "paperpk.com",
+    "pk.mustakbil.com",
+    "theladders.com",
+    "wellfound.com",      # Startup jobs (formerly AngelList)
+    "remoteok.com",
+    "weworkremotely.com",
+    "himalayas.app",
+    "flexjobs.com",
+}
  
