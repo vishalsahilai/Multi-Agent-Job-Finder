@@ -75,4 +75,75 @@ JOB_PATH_SIGNALS = [
     "jk=",           # Indeed job key
     "/jobs/view/",   # LinkedIn
 ]
+
+#  Filter Functions 
+ 
+def _get_domain(url: str) -> str:
+    try:
+        parsed = urlparse(url)
+        return parsed.netloc.replace("www.", "").lower()
+    except Exception:
+        return ""
+ 
+ 
+def _is_blocked_domain(domain: str) -> bool:
+    # Exact match or subdomain match
+    for blocked in BLOCKED_DOMAINS:
+        if domain == blocked or domain.endswith(f".{blocked}"):
+            return True
+    return False
+ 
+ 
+def _is_allowed_job_domain(domain: str) -> bool:
+    for allowed in ALLOWED_JOB_DOMAINS:
+        if domain == allowed or domain.endswith(f".{allowed}"):
+            return True
+    return False
+ 
+ 
+def _has_blocked_path(url: str) -> bool:
+    url_lower = url.lower()
+    return any(pattern in url_lower for pattern in BLOCKED_PATH_PATTERNS)
+ 
+ 
+def _has_job_signal(url: str) -> bool:
+    url_lower = url.lower()
+    return any(signal in url_lower for signal in JOB_PATH_SIGNALS)
+ 
+ 
+def _is_valid_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+    except Exception:
+        return False
+ 
+ 
+def filter_url(url: str) -> tuple:
+    """
+    Evaluate a single URL.
+ 
+    Returns:
+        (keep: bool, reason: str)
+    """
+    if not url or not _is_valid_url(url):
+        return False, "invalid URL"
+ 
+    domain = _get_domain(url)
+ 
+    if _is_blocked_domain(domain):
+        return False, f"blocked domain: {domain}"
+ 
+    if _has_blocked_path(url):
+        return False, "blocked path pattern"
+ 
+    # If it's a known job board, trust it
+    if _is_allowed_job_domain(domain):
+        return True, "known job board"
+ 
+    # Unknown domain — require a job signal in the path
+    if _has_job_signal(url):
+        return True, "job signal in URL"
+ 
+    return False, f"no job signal, unknown domain: {domain}"
  
