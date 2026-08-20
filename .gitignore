@@ -10,3 +10,4 @@ venv/
 # ignore real resumes accidentally dropped in for local testing
 data/sample_resumes/*
 !data/sample_resumes/.gitkeep
+
