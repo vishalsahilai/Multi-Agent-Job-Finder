@@ -95,7 +95,7 @@ def _extract_google_jobs(soup: BeautifulSoup, base_url: str) -> list:
     return links
 
 
-# ── Board Router ──────────────────────────────────────────────────────────────
+#  Board Router 
  
 BOARD_EXTRACTORS = {
     "indeed.com":     _extract_indeed,
@@ -112,5 +112,23 @@ def _get_extractor(url: str):
     for key, fn in BOARD_EXTRACTORS.items():
         if key in domain:
             return fn
+    return None
+
+ 
+#  Fetcher 
+ 
+def _fetch_page(url: str, session: requests.Session) -> Optional[BeautifulSoup]:
+    try:
+        response = session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        return BeautifulSoup(response.text, "lxml")
+    except requests.exceptions.HTTPError as e:
+        logger.warning(f"HTTP {e.response.status_code} for {url}")
+    except requests.exceptions.ConnectionError:
+        logger.warning(f"Connection failed: {url}")
+    except requests.exceptions.Timeout:
+        logger.warning(f"Timeout: {url}")
+    except Exception as e:
+        logger.warning(f"Fetch error for {url}: {e}")
     return None
  
