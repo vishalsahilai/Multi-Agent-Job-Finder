@@ -93,4 +93,24 @@ def _extract_google_jobs(soup: BeautifulSoup, base_url: str) -> list:
         elif href.startswith("http") and "google.com" not in href:
             links.append(href)
     return links
+
+
+# ── Board Router ──────────────────────────────────────────────────────────────
+ 
+BOARD_EXTRACTORS = {
+    "indeed.com":     _extract_indeed,
+    "linkedin.com":   _extract_linkedin,
+    "rozee.pk":       _extract_rozee,
+    "mustakbil.com":  _extract_mustakbil,
+    "glassdoor.com":  _extract_glassdoor,
+    "google.com":     _extract_google_jobs,
+}
+ 
+ 
+def _get_extractor(url: str):
+    domain = urlparse(url).netloc.replace("www.", "")
+    for key, fn in BOARD_EXTRACTORS.items():
+        if key in domain:
+            return fn
+    return None
  
