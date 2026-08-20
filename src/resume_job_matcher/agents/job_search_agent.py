@@ -131,4 +131,55 @@ def _fetch_page(url: str, session: requests.Session) -> Optional[BeautifulSoup]:
     except Exception as e:
         logger.warning(f"Fetch error for {url}: {e}")
     return None
+
+
+
+#  Main Entry Point 
+ 
+def search_jobs(optimized_queries: list, max_results: int = 50) -> list:
+    collected = []
+    seen_urls = set()
+    session = requests.Session()
+ 
+    for item in optimized_queries:
+        if len(collected) >= max_results:
+            break
+ 
+        search_url = item["url"]
+        board = item["board"]
+        query = item["query"]
+ 
+        logger.info(f"Searching [{board}]: {query}")
+ 
+        soup = _fetch_page(search_url, session)
+        if not soup:
+            continue
+ 
+        extractor = _get_extractor(search_url)
+        if not extractor:
+            logger.warning(f"No extractor for board: {board}")
+            continue
+ 
+        job_links = extractor(soup, search_url)
+ 
+        for link in job_links:
+            if len(collected) >= max_results:
+                break
+            # Normalize
+            clean = link.strip().rstrip("/")
+            if clean and clean not in seen_urls:
+                seen_urls.add(clean)
+                collected.append({
+                    "job_url": clean,
+                    "board":   board,
+                    "query":   query,
+                })
+ 
+        logger.info(f"  → Found {len(job_links)} links from {board}")
+ 
+        # Polite delay between requests
+        time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
+ 
+    logger.info(f"Total job URLs collected: {len(collected)}")
+    return collected
  
