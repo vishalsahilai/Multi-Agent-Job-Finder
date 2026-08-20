@@ -63,4 +63,16 @@ ALLOWED_JOB_DOMAINS = {
     "himalayas.app",
     "flexjobs.com",
 }
+
+ # Required Path Patterns (URL must contain one of these for job boards) 
+ 
+JOB_PATH_SIGNALS = [
+    "/job", "/jobs", "/career", "/careers", "/vacancy", "/vacancies",
+    "/position", "/opening", "/work-with-us", "/join-us",
+    "/employment", "/recruit", "/hiring", "/apply",
+    "viewjob", "jobdetail", "job-detail", "job_detail",
+    "/rc/clk",       # Indeed tracking
+    "jk=",           # Indeed job key
+    "/jobs/view/",   # LinkedIn
+]
  
