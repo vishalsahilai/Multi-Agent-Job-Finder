@@ -10,7 +10,7 @@ from resume_job_matcher.agents.job_search_agent import search_jobs
 from resume_job_matcher.processors.url_filter import filter_urls
 from resume_job_matcher.agents.job_scraper_agent import scrape_jobs
 from resume_job_matcher.processors.date_normalizer import filter_by_date
-from resume_job_matcher.processors.duplicate_remover import remove_duplicates
+from resume_job_matcher.processors.date_normalizer import remove_duplicates
 from resume_job_matcher.processors.relevance_scorer import score_jobs
 
 logger = logging.getLogger(__name__)
