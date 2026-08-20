@@ -146,4 +146,23 @@ def filter_url(url: str) -> tuple:
         return True, "job signal in URL"
  
     return False, f"no job signal, unknown domain: {domain}"
+
+#  Main Entry Point 
+ 
+def filter_urls(job_items: list) -> list:
+    kept = []
+    removed = 0
+ 
+    for item in job_items:
+        url = item.get("job_url", "")
+        keep, reason = filter_url(url)
+ 
+        if keep:
+            kept.append(item)
+        else:
+            removed += 1
+            logger.debug(f"Removed [{reason}]: {url}")
+ 
+    logger.info(f"URL filter: {len(kept)} kept, {removed} removed from {len(job_items)} total")
+    return kept
  
