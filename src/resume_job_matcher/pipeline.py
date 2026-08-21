@@ -2,16 +2,16 @@ import logging
 from datetime import date
 from typing import Optional, Callable
 
-from resume_job_matcher.tools.resume_reader import read_resume
-from resume_job_matcher.processors.keyword_extractor import extract_keywords
-from resume_job_matcher.chains.analyzer import analyze_resume
-from resume_job_matcher.processors.query_optimizer import optimize_queries
-from resume_job_matcher.agents.job_search_agent import search_jobs
-from resume_job_matcher.processors.url_filter import filter_urls
-from resume_job_matcher.agents.job_scraper_agent import scrape_jobs
-from resume_job_matcher.processors.date_normalizer import filter_by_date
-from resume_job_matcher.processors.date_normalizer import remove_duplicates
-from resume_job_matcher.processors.relevance_scorer import score_jobs
+from src.resume_job_matcher.tools.resume_reader import read_resume
+from src.resume_job_matcher.processors.keyword_extractor import extract_keywords
+from src.resume_job_matcher.chains.analyzer import analyze_resume
+from src.resume_job_matcher.processors.query_optimizer import optimize_queries
+from src.resume_job_matcher.agents.job_search_agent import search_jobs
+from src.resume_job_matcher.processors.url_filter import filter_urls
+from src.resume_job_matcher.agents.job_scraper_agent import scrape_jobs
+from src.resume_job_matcher.processors.date_normalizer import filter_by_date
+from src.resume_job_matcher.processors.duplicate_remover import remove_duplicates
+from src.resume_job_matcher.processors.relevance_scorer import score_jobs
 
 logger = logging.getLogger(__name__)
 
