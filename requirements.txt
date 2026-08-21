@@ -1,7 +1,7 @@
 # Core LLM
 langchain==0.3.25
 langchain-core==0.3.61
-google-generativeai
+google-genai==1.16.0
 langchain-google-genai
 
 #  Resume Reading 
