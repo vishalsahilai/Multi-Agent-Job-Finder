@@ -1,124 +1,204 @@
+"""
+Stage 8: Date Normalizer + Date Range Filter
+Converts raw date strings from Stage 7 into datetime objects.
+Then filters jobs by user-specified From Date / To Date.
+No LLM — pure Python using dateparser + regex.
+"""
+
 import re
 import logging
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-
-from rapidfuzz import fuzz
+from datetime import datetime, timedelta, date
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Similarity threshold — above this = considered duplicate (0-100)
-FUZZY_THRESHOLD = 85
+# ── Relative Date Patterns ────────────────────────────────────────────────────
+# Handles: "3 days ago", "posted yesterday", "2 hours ago", "just now", "1 week ago"
 
-#  URL Normalizer 
+RELATIVE_PATTERNS = [
+    (r"just\s*now|moments?\s*ago",                          lambda _: 0),
+    (r"(\d+)\s*hours?\s*ago",                               lambda m: 0),       # same day
+    (r"yesterday",                                          lambda _: 1),
+    (r"(\d+)\s*days?\s*ago",                                lambda m: int(m.group(1))),
+    (r"(\d+)\s*weeks?\s*ago",                               lambda m: int(m.group(1)) * 7),
+    (r"(\d+)\s*months?\s*ago",                              lambda m: int(m.group(1)) * 30),
+    (r"a\s*day\s*ago",                                      lambda _: 1),
+    (r"a\s*week\s*ago",                                     lambda _: 7),
+    (r"a\s*month\s*ago",                                    lambda _: 30),
+    (r"(\d+)\+\s*days?\s*ago",                              lambda m: int(m.group(1))),  # "30+ days ago"
+]
 
-# UTM and tracking params to strip
-STRIP_PARAMS = {
-    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-    "ref", "referer", "referrer", "source", "src",
-    "trk", "trackingId", "tracking",          # LinkedIn
-    "from", "fromjk", "advn", "adid",          # Indeed
-    "salchk", "spon", "tk",
-    "cmp", "cmpid",
-    "fbclid", "gclid", "msclkid",
-    "hl", "gl",
-}
+
+def _parse_relative(text: str) -> Optional[datetime]:
+    text_lower = text.lower().strip()
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    for pattern, delta_fn in RELATIVE_PATTERNS:
+        m = re.search(pattern, text_lower)
+        if m:
+            try:
+                days_back = delta_fn(m)
+                return today - timedelta(days=days_back)
+            except Exception:
+                continue
+    return None
 
 
-def _normalize_url(url: str) -> str:
+# ── Absolute Date Formats ─────────────────────────────────────────────────────
+
+ABSOLUTE_FORMATS = [
+    "%Y-%m-%d",          # 2026-08-10
+    "%d-%m-%Y",          # 10-08-2026
+    "%d/%m/%Y",          # 10/08/2026
+    "%m/%d/%Y",          # 08/10/2026
+    "%B %d, %Y",         # August 10, 2026
+    "%b %d, %Y",         # Aug 10, 2026
+    "%d %B %Y",          # 10 August 2026
+    "%d %b %Y",          # 10 Aug 2026
+    "%B %d %Y",          # August 10 2026
+    "%b %d %Y",          # Aug 10 2026
+    "%Y/%m/%d",          # 2026/08/10
+    "%d.%m.%Y",          # 10.08.2026
+    "%Y.%m.%d",          # 2026.08.10
+]
+
+
+def _parse_absolute(text: str) -> Optional[datetime]:
+    text = text.strip()
+    # Try to extract just the date portion if there's extra text
+    date_pattern = re.search(
+        r"\d{1,4}[-/.\s]\w+[-/.\s]\d{2,4}|\w+\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+\w+\s+\d{4}",
+        text
+    )
+    candidates = [text]
+    if date_pattern:
+        candidates.insert(0, date_pattern.group(0).strip())
+
+    for candidate in candidates:
+        for fmt in ABSOLUTE_FORMATS:
+            try:
+                return datetime.strptime(candidate, fmt)
+            except ValueError:
+                continue
+    return None
+
+
+# ── Dateparser Fallback ───────────────────────────────────────────────────────
+
+def _parse_with_dateparser(text: str) -> Optional[datetime]:
     try:
-        parsed = urlparse(url.strip().lower())
-
-        # Normalize scheme to https
-        scheme = "https"
-
-        # Strip www.
-        netloc = parsed.netloc.replace("www.", "")
-
-        # Clean query params
-        raw_params = parse_qs(parsed.query, keep_blank_values=False)
-        clean_params = {
-            k: v for k, v in raw_params.items()
-            if k.lower() not in STRIP_PARAMS
-        }
-        clean_query = urlencode(sorted(clean_params.items()), doseq=True)
-
-        # Remove trailing slash from path
-        path = parsed.path.rstrip("/")
-
-        # Remove fragment (#)
-        canonical = urlunparse((scheme, netloc, path, "", clean_query, ""))
-        return canonical
-
+        import dateparser
+        result = dateparser.parse(
+            text,
+            settings={
+                "PREFER_DAY_OF_MONTH": "first",
+                "RETURN_AS_TIMEZONE_AWARE": False,
+                "PREFER_LOCALE_DATE_ORDER": False,
+                "TO_TIMEZONE": "UTC",
+            }
+        )
+        return result
     except Exception:
-        return url.strip().lower()
+        return None
 
 
-#  Text Normalizer (for fuzzy matching) 
+# ── Main Normalizer ───────────────────────────────────────────────────────────
 
-def _normalize_text(text: str) -> str:
-    if not text:
-        return ""
-    text = text.lower()
-    text = re.sub(r"[^\w\s]", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+def normalize_date(raw: Optional[str]) -> Optional[datetime]:
+    """
+    Convert any raw date string to a datetime object.
+
+    Priority:
+    1. Relative patterns (fastest, most common on job boards)
+    2. Absolute format strptime (exact match)
+    3. dateparser library (fuzzy fallback)
+
+    Returns None if all methods fail.
+    """
+    if not raw or not isinstance(raw, str):
+        return None
+
+    raw = raw.strip()
+    if not raw:
+        return None
+
+    # 1. Relative
+    result = _parse_relative(raw)
+    if result:
+        return result
+
+    # 2. Absolute
+    result = _parse_absolute(raw)
+    if result:
+        return result
+
+    # 3. dateparser fallback
+    result = _parse_with_dateparser(raw)
+    if result:
+        # Sanity check — reject dates far in the future or ancient past
+        now = datetime.now()
+        if datetime(2000, 1, 1) <= result <= now + timedelta(days=1):
+            return result
+
+    return None
 
 
-def _make_fingerprint(title: str, company: str) -> str:
-    t = _normalize_text(title or "")
-    c = _normalize_text(company or "")
-    return f"{t} {c}".strip()
+# ── Date Filter 
 
+def filter_by_date(
+    jobs: list,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+) -> tuple:
+    """
+    Filter scraped jobs by date range.
 
-#  Dedup Logic 
+    Args:
+        jobs:      List of job dicts from Stage 7 (with date_posted_raw).
+        from_date: Start date (inclusive). None = no lower bound.
+        to_date:   End date (inclusive). None = no upper bound (defaults to today).
 
-def _is_fuzzy_duplicate(fingerprint: str, seen_fingerprints: list) -> bool:
+    Returns:
+        (in_range: list, no_date: list)
+        - in_range: Jobs with date within the specified range
+        - no_date:  Jobs where date could not be parsed (shown separately in UI)
+    """
+    if to_date is None:
+        to_date = datetime.now().date()
 
-    for seen in seen_fingerprints:
-        score = fuzz.token_sort_ratio(fingerprint, seen)
-        if score >= FUZZY_THRESHOLD:
-            return True
-    return False
-
-
-#  Main Entry Point 
-
-def remove_duplicates(jobs: list) -> list:
-    #  Pass 1: URL dedup 
-    seen_urls = set()
-    after_url_dedup = []
+    in_range = []
+    no_date = []
 
     for job in jobs:
-        norm = _normalize_url(job.get("job_url", ""))
-        if norm and norm not in seen_urls:
-            seen_urls.add(norm)
-            after_url_dedup.append(job)
-        else:
-            logger.debug(f"URL duplicate removed: {job.get('job_url')}")
+        raw = job.get("date_posted_raw")
+        parsed = normalize_date(raw)
 
-    url_removed = len(jobs) - len(after_url_dedup)
-    logger.info(f"Pass 1 (URL dedup): removed {url_removed}, kept {len(after_url_dedup)}")
-
-    #  Pass 2: Fuzzy title + company dedup 
-    seen_fingerprints = []
-    after_fuzzy_dedup = []
-
-    for job in after_url_dedup:
-        fp = _make_fingerprint(job.get("title", ""), job.get("company", ""))
-
-        if not fp.strip():
-            # No title or company — can't fingerprint, keep it
-            after_fuzzy_dedup.append(job)
+        if parsed is None:
+            # Can't determine date — keep separately
+            job["date_posted"] = None
+            job["date_display"] = "Date Not Available"
+            no_date.append(job)
             continue
 
-        if _is_fuzzy_duplicate(fp, seen_fingerprints):
-            logger.debug(f"Fuzzy duplicate removed: '{job.get('title')}' @ '{job.get('company')}'")
-        else:
-            seen_fingerprints.append(fp)
-            after_fuzzy_dedup.append(job)
+        job_date = parsed.date()
+        job["date_posted"] = parsed
+        job["date_display"] = parsed.strftime("%d %b %Y")   # e.g. "10 Aug 2026"
 
-    fuzzy_removed = len(after_url_dedup) - len(after_fuzzy_dedup)
-    logger.info(f"Pass 2 (fuzzy dedup): removed {fuzzy_removed}, kept {len(after_fuzzy_dedup)}")
-    logger.info(f"Total removed: {len(jobs) - len(after_fuzzy_dedup)} | Final count: {len(after_fuzzy_dedup)}")
+        # Apply filters
+        if from_date and job_date < from_date:
+            logger.debug(f"Date filter: removed (too old) — {job_date} | {job.get('title')}")
+            continue
 
-    return after_fuzzy_dedup
+        if job_date > to_date:
+            logger.debug(f"Date filter: removed (future date) — {job_date} | {job.get('title')}")
+            continue
+
+        in_range.append(job)
+
+    logger.info(
+        f"Date filter: {len(in_range)} in range, "
+        f"{len(no_date)} no date, "
+        f"{len(jobs) - len(in_range) - len(no_date)} removed"
+    )
+
+    return in_range, no_date
