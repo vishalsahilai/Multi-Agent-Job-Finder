@@ -5,6 +5,7 @@ from datetime import date, timedelta
 import streamlit as st
 from dotenv import load_dotenv
 
+
 from src.resume_job_matcher.pipeline import run_pipeline
 
 #  Config 
@@ -45,7 +46,7 @@ with st.sidebar:
     # API Key
     api_key = st.text_input(
         "Gemini API Key",
-        value=st.secrets.get("GEMINI_API_KEY", ""),
+        value=os.getenv("GEMINI_API_KEY", ""),
         type="password",
         help="Get your key at https://aistudio.google.com/app/apikey",
     )
