@@ -1,10 +1,3 @@
-"""
-Stage 8: Date Normalizer + Date Range Filter
-Converts raw date strings from Stage 7 into datetime objects.
-Then filters jobs by user-specified From Date / To Date.
-No LLM — pure Python using dateparser + regex.
-"""
-
 import re
 import logging
 from datetime import datetime, timedelta, date
@@ -12,7 +5,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# ── Relative Date Patterns ────────────────────────────────────────────────────
+#  Relative Date Patterns 
 # Handles: "3 days ago", "posted yesterday", "2 hours ago", "just now", "1 week ago"
 
 RELATIVE_PATTERNS = [
@@ -44,7 +37,7 @@ def _parse_relative(text: str) -> Optional[datetime]:
     return None
 
 
-# ── Absolute Date Formats ─────────────────────────────────────────────────────
+#  Absolute Date Formats 
 
 ABSOLUTE_FORMATS = [
     "%Y-%m-%d",          # 2026-08-10
@@ -83,7 +76,7 @@ def _parse_absolute(text: str) -> Optional[datetime]:
     return None
 
 
-# ── Dateparser Fallback ───────────────────────────────────────────────────────
+#  Dateparser Fallback 
 
 def _parse_with_dateparser(text: str) -> Optional[datetime]:
     try:
@@ -102,7 +95,7 @@ def _parse_with_dateparser(text: str) -> Optional[datetime]:
         return None
 
 
-# ── Main Normalizer ───────────────────────────────────────────────────────────
+#  Main Normalizer 
 
 def normalize_date(raw: Optional[str]) -> Optional[datetime]:
     """
@@ -143,7 +136,7 @@ def normalize_date(raw: Optional[str]) -> Optional[datetime]:
     return None
 
 
-# ── Date Filter 
+#  Date Filter 
 
 def filter_by_date(
     jobs: list,
