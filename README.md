@@ -1,198 +1,155 @@
 # 🔍 Multi-Agent Job Finder
 
-> A production-ready AI-powered job discovery system built with Python, Streamlit, Google Gemini, BeautifulSoup, Playwright, and custom Python algorithms — handling everything from resume parsing to date-filtered, relevance-scored job results with minimum LLM usage.
+> A production-ready AI-powered job discovery and auto-apply system built with Python, Streamlit, Google Gemini, BeautifulSoup, and Playwright — handling everything from resume parsing to date-filtered, relevance-scored job results, and automatic job applications.
 
 ---
 
-## 🖥️ Live Preview
+## 🖥️ Local Usage
 
-> Upload your resume → Get recent, relevant, date-filtered jobs in seconds.
+```bash
+streamlit run app.py
+# Opens at http://localhost:8501
+```
+
+Upload your resume → jobs scraped and ranked in minutes. No hosting. Runs fully on your machine.
 
 ---
 
 ## 📋 Table of Contents
 
 1. [Overview](#overview)
-2. [System Architecture](#system-architecture)
-3. [Features](#features)
-4. [How It Works](#how-it-works)
+2. [Phase 1 — Job Finder](#phase-1--job-finder)
+3. [Phase 2 — Auto Apply](#phase-2--auto-apply)
+4. [System Architecture](#system-architecture)
 5. [File Structure](#file-structure)
 6. [Prerequisites](#prerequisites)
 7. [Setup & Installation](#setup--installation)
 8. [Environment Variables](#environment-variables)
-9. [Streamlit UI Guide](#streamlit-ui-guide)
-10. [Search Configuration](#search-configuration)
-11. [Date Filtering Algorithm](#date-filtering-algorithm)
-12. [Relevance Scoring Algorithm](#relevance-scoring-algorithm)
+9. [How It Works — Phase 1](#how-it-works--phase-1)
+10. [How It Works — Phase 2](#how-it-works--phase-2)
+11. [Relevance Scoring Algorithm](#relevance-scoring-algorithm)
+12. [Date Filtering Algorithm](#date-filtering-algorithm)
 13. [Duplicate Removal](#duplicate-removal)
-14. [Job Scraping](#job-scraping)
-15. [Technologies](#technologies)
-16. [API Requirements](#api-requirements)
-17. [Limitations](#limitations)
-18. [Future Improvements](#future-improvements)
-19. [Author](#author)
+14. [Technologies](#technologies)
+15. [API Requirements](#api-requirements)
+16. [Limitations](#limitations)
+17. [Future Improvements](#future-improvements)
+18. [Author](#author)
 
 ---
 
 ## Overview
 
-**Multi-Agent Job Finder** is a full-stack AI job discovery system that takes a candidate's resume, analyzes it intelligently, searches real job boards, scrapes actual job postings, filters by date range, removes duplicates, scores by relevance, and presents clean results in a Streamlit interface.
+**Multi-Agent Job Finder** is a two-phase AI job discovery and auto-apply system.
 
-The system is built around three core innovations:
+**Phase 1 (Complete):** Upload resume → scrape real jobs from LinkedIn, Rozee.pk, Indeed, Glassdoor, Mustakbil → filter by date → remove duplicates → score by relevance → show ranked results.
 
-- **Minimum LLM Usage** — Gemini is called exactly once per run. All other processing (filtering, scoring, deduplication, date parsing, keyword extraction) is done in Python.
-- **Date-Range Filtering** — Handles 5+ real-world date formats (absolute, relative, ISO) to return only jobs posted within a user-specified date range.
-- **Python-First Architecture** — Resume keyword extraction, URL filtering, relevance scoring, duplicate removal, and job sorting are all pure Python algorithms — no API cost.
+**Phase 2 (In Development):** Select jobs from Phase 1 results → system automatically fills and submits applications on LinkedIn Easy Apply, Indeed, and Rozee.pk using your profile data.
+
+### Core Principles
+
+- **Minimum LLM Usage** — Gemini is called exactly once per run. All filtering, scoring, deduplication, date parsing, and keyword extraction is pure Python.
+- **No Data Storage** — Resume bytes stay in memory only. Nothing saved to disk. No database.
+- **Local First** — Runs entirely on your machine. No hosting required.
+- **Python-First Architecture** — 10-stage pipeline where only 1 stage uses an LLM.
+
+---
+
+## Phase 1 — Job Finder
+
+**Status: ✅ Complete and Working**
+
+| What it does | How |
+|---|---|
+| Read resume (PDF / DOCX) | pypdf + python-docx |
+| Extract skills, title, location, experience | Python regex + 100+ skill dictionary |
+| Analyze resume and generate search queries | 1 Gemini API call |
+| Build job board search URLs | Python — 6 boards × 3 queries = 18 URLs |
+| Search and collect job posting URLs | requests + BeautifulSoup |
+| Filter junk URLs (GitHub, Medium, YouTube) | Python string matching |
+| Scrape job details from each posting | BeautifulSoup + Playwright |
+| Parse all date formats | Python + dateparser |
+| Filter jobs by From Date → To Date | Python |
+| Remove duplicate jobs | URL normalization + fuzzy matching |
+| Score and rank by relevance | 5-signal Python scorer |
+| Show results in Streamlit UI | Job cards + match % + CSV download |
+
+---
+
+## Phase 2 — Auto Apply
+
+**Status: 🚧 In Development**
+
+After Phase 1 shows ranked jobs, Phase 2 lets the system automatically apply to selected jobs.
+
+| What it does | How |
+|---|---|
+| User selects jobs to apply to | Checkboxes in Streamlit UI |
+| User fills applicant profile once | Name, email, phone, experience, cover letter template |
+| System opens each job application | Playwright browser automation |
+| Fills application form fields automatically | CSS selectors + form detection |
+| Attaches resume PDF automatically | File input automation |
+| Generates custom cover letter per job | 1 Gemini call per application |
+| Submits application | Playwright click + form submit |
+| Logs result (Applied / Failed / Manual needed) | Python dict → shown in UI |
+
+### Phase 2 Supported Platforms
+
+| Platform | Method | Status |
+|---|---|---|
+| LinkedIn Easy Apply | Playwright form fill | 🚧 In Development |
+| Indeed Apply | Playwright form fill | 🚧 In Development |
+| Rozee.pk Apply | Playwright form fill | 🚧 In Development |
+| Company career pages | Generic form detection | 🚧 Planned |
 
 ---
 
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Streamlit UI                               │
-│   Resume Upload │ Date Picker │ Location │ Filters │ Job Table  │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       Pipeline                                  │
-│                                                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │ Resume Reader│  │ Keyword      │  │  Single LLM Call     │  │
-│  │ PDF / DOCX   │  │ Extractor    │  │  Google Gemini       │  │
-│  │ Python only  │  │ Python only  │  │  (Analyzer — once)   │  │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘  │
-│                                                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │ Query        │  │  Job Search  │  │   URL Filter         │  │
-│  │ Optimizer    │  │  Requests +  │  │   Python only        │  │
-│  │ Python only  │  │  Python      │  │   (removes junk)     │  │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘  │
-│                                                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │ Job Scraper  │  │ Date Filter  │  │  Duplicate Remover   │  │
-│  │ BeautifulSoup│  │ Python only  │  │  Python only         │  │
-│  │ + Playwright │  │ (From→To)    │  │  URL + Fuzzy match   │  │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘  │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │           Relevance Scorer — Python only                 │   │
-│  │    Title Match │ Tech Match │ Skills │ Location │ Type   │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-                    Final Job Table
-            (sorted by relevance + date)
-```
-
----
-
-## Features
-
-- **Resume Upload** — PDF and DOCX formats supported
-- **Python Resume Keyword Extraction** — skills, years of experience, location, job title extracted without LLM
-- **Single LLM Call** — Gemini called once to generate optimized search queries and candidate profile
-- **Optimized Search Queries** — weak queries upgraded automatically (e.g. "Python jobs" → "Junior Python Backend Developer Django FastAPI Karachi")
-- **Multi-Platform Job Search** — searches Rozee.pk, Indeed, LinkedIn public pages, and Google Jobs
-- **Smart URL Filtering** — removes GitHub repos, tutorials, Medium articles, documentation, YouTube before scraping
-- **Python-Based Scraping** — BeautifulSoup for static pages, Playwright for dynamic pages — no LLM used during scraping
-- **5-Format Date Parsing** — handles absolute dates, relative dates, ISO dates, and "Posted X days ago" formats
-- **Date Range Filtering** — From Date → To Date filter removes all out-of-range jobs
-- **Duplicate Job Removal** — URL normalization + fuzzy title+company matching eliminates duplicates
-- **Relevance Scoring Algorithm** — scores each job on 5 signals and ranks by percentage match
-- **Configurable Job Count** — Max Jobs slider dynamically adjustable via UI
-- **Location Filter** — filter results by city or country
-- **Employment Type Filter** — Full-time, Remote, Hybrid, On-site
-- **Live Progress Tracker** — 10-step status updates during pipeline execution
-- **Clean Job Cards** — Job Title, Company, Date, Location, Match %, Link in one organized view
-- **No Fake Dates** — if posting date is unavailable, shows "Date Not Available" — never fabricates
-- **CSV Download** — export all results with one click
-
----
-
-## How It Works
-
-### Full Pipeline Flow
-
-```
-User uploads Resume (PDF / DOCX)
-         ↓
-Resume Reader extracts raw text (Python — pypdf / python-docx)
-         ↓
-Keyword Extractor runs on text (Python — regex + skill dictionary)
-  → Extracts: skills, years of experience, location, job title keywords
-         ↓
-Single Gemini Call (1 API call total per run)
-  → Input: resume text + Python-extracted keywords
-  → Output: candidate role, 3 search queries, top skills list (JSON)
-         ↓
-Query Optimizer enhances queries (Python)
-  → "Python Developer" → "Junior Python Backend Developer Django FastAPI Karachi"
-  → Builds URLs for 6 job boards per query
-         ↓
-Job Search runs (Python — requests + BeautifulSoup)
-  → Searches Rozee.pk, Indeed, LinkedIn, Google Jobs, Glassdoor, Mustakbil
-  → Collects raw job posting URLs
-         ↓
-URL Filter removes junk (Python — string matching)
-  → Removes: github.com, medium.com, dev.to, youtube.com, geeksforgeeks, docs
-  → Keeps: linkedin.com/jobs, indeed.com/viewjob, rozee.pk/job, company career pages
-         ↓
-Job Scraper extracts job data (Python — BeautifulSoup / Playwright)
-  → Title, Company, Location, Employment Type, Description, Date Posted, URL
-         ↓
-Date Normalizer converts all date formats (Python — dateparser)
-  → "August 10, 2026" | "3 days ago" | "2026-08-10" | "yesterday" → datetime
-         ↓
-Date Filter applies From Date → To Date range (Python)
-  → Jobs outside range removed
-  → Date unavailable jobs kept separately with "Date Not Available" label
-         ↓
-Duplicate Remover cleans results (Python)
-  → URL normalization (strips utm params, trailing slashes, http/https)
-  → Fuzzy title + company match for cross-platform duplicates
-         ↓
-Relevance Scorer ranks all jobs (Python)
-  → Score calculated per job → converted to percentage → sorted descending
-         ↓
-Streamlit UI displays Final Job Cards
-  → Job Title | Company | Date | Location | Match % | Link | Score Breakdown
-```
-
-### LLM Usage (Exactly 1 Call Per Run)
-
-```
-What Gemini does:
-  Input → resume text (first 3000 chars) + Python-extracted keywords
-  Output → {
-    "candidate_role": "Junior Python Backend Developer",
-    "seniority": "Junior",
-    "search_queries": [
-      "Junior Python Backend Developer Django FastAPI Karachi",
-      "Python Developer FastAPI PostgreSQL remote Pakistan",
-      "Backend Engineer Django REST Framework entry level"
-    ],
-    "top_skills": ["Python", "Django", "FastAPI", "PostgreSQL", "REST API"],
-    "summary": "..."
-  }
-
-What Python handles (no LLM):
-  ✅ Resume text extraction
-  ✅ Skill keyword detection (100+ skills across 8 categories)
-  ✅ Experience year parsing
-  ✅ Query optimization / enhancement
-  ✅ Job board URL building (6 boards × 3 queries = 18 URLs)
-  ✅ URL filtering (junk removal)
-  ✅ Job page scraping
-  ✅ Date parsing and normalization
-  ✅ Date range filtering
-  ✅ Duplicate detection and removal
-  ✅ Relevance scoring
-  ✅ Result sorting
-  ✅ Location filtering
-  ✅ Employment type filtering
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Streamlit UI                                 │
+│  Resume Upload │ Filters │ Job Cards │ Apply Selector │ Apply Log   │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    PHASE 1 — Job Finder Pipeline                    │
+│                                                                     │
+│  Stage 1   Resume Reader        (pypdf / python-docx)              │
+│  Stage 2   Keyword Extractor    (Python regex + skill dict)        │
+│  Stage 3   Analyzer             (1 Gemini call)                    │
+│  Stage 4   Query Optimizer      (Python — 18 URLs built)           │
+│  Stage 5   Job Search Agent     (requests + BeautifulSoup)         │
+│  Stage 6   URL Filter           (Python string matching)           │
+│  Stage 7   Job Scraper Agent    (BeautifulSoup + Playwright)       │
+│  Stage 8   Date Normalizer      (Python + dateparser)              │
+│  Stage 9   Duplicate Remover    (URL norm + rapidfuzz)             │
+│  Stage 10  Relevance Scorer     (Python 5-signal scorer)           │
+│                                                                     │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+              Ranked Job Cards shown in UI
+                             │
+                    User selects jobs
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    PHASE 2 — Auto Apply Pipeline                    │
+│                                                                     │
+│  Stage 1   Profile Loader       (user form in UI)                  │
+│  Stage 2   Cover Letter Gen     (1 Gemini call per job)            │
+│  Stage 3   Application Agent    (Playwright browser automation)    │
+│  Stage 4   Form Filler          (CSS selectors + field detection)  │
+│  Stage 5   Resume Attacher      (file input automation)            │
+│  Stage 6   Submitter            (click + submit)                   │
+│  Stage 7   Result Logger        (Applied / Failed / Manual)        │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+              Application Log shown in UI
 ```
 
 ---
@@ -202,45 +159,48 @@ What Python handles (no LLM):
 ```
 Multi-Agent-Job-Finder/
 │
-├── app.py                              ← Streamlit UI entry point
+├── app.py                                  ← Streamlit UI (Phase 1 + Phase 2 tabs)
 ├── requirements.txt
 ├── .env.example
 ├── .gitignore
 ├── README.md
 │
 ├── data/
-│   └── sample_resumes/                 ← Sample PDF/DOCX resumes for testing
+│   └── sample_resumes/                     ← Sample PDF/DOCX resumes for testing
 │
 ├── src/
 │   └── resume_job_matcher/
 │       │
 │       ├── __init__.py
-│       ├── config.py                   ← Pydantic settings + .env loader
-│       ├── pipeline.py                 ← Full pipeline orchestrator
+│       ├── config.py                       ← Pydantic settings + .env loader
+│       ├── pipeline.py                     ← Phase 1 pipeline orchestrator
 │       │
 │       ├── tools/
 │       │   ├── __init__.py
-│       │   ├── resume_reader.py        ← PDF/DOCX text extractor (pypdf + python-docx)
-│       │   └── scrape_url.py           ← Python scraper (BeautifulSoup + Playwright)
+│       │   ├── resume_reader.py            ← PDF/DOCX text extractor
+│       │   └── scrape_url.py               ← Single URL scraper wrapper
 │       │
 │       ├── chains/
 │       │   ├── __init__.py
-│       │   └── analyzer.py             ← Single Gemini call → candidate profile + queries
+│       │   ├── analyzer.py                 ← Single Gemini call → profile + queries
+│       │   └── cover_letter_generator.py   ← Phase 2: Gemini cover letter per job
 │       │
 │       ├── agents/
 │       │   ├── __init__.py
-│       │   ├── job_search_agent.py     ← Python-based multi-platform job search
-│       │   └── job_scraper_agent.py    ← BeautifulSoup / Playwright scraper
+│       │   ├── job_search_agent.py         ← Multi-board job URL collector
+│       │   ├── job_scraper_agent.py        ← BeautifulSoup + Playwright scraper
+│       │   └── apply_agent.py             ← Phase 2: Playwright auto-apply agent
 │       │
 │       └── processors/
 │           ├── __init__.py
-│           ├── keyword_extractor.py    ← Python resume keyword + skill parser
-│           ├── query_optimizer.py      ← Search query + job board URL builder (Python)
-│           ├── url_filter.py           ← Junk URL removal (Python)
-│           ├── date_normalizer.py      ← Multi-format date parser + range filter (Python)
-│           ├── date_filter.py          ← From Date → To Date range filter (Python)
-│           ├── duplicate_remover.py    ← URL normalization + fuzzy dedup (Python)
-│           └── relevance_scorer.py     ← 5-signal job relevance scorer (Python)
+│           ├── keyword_extractor.py        ← Python resume keyword parser
+│           ├── query_optimizer.py          ← Search query + URL builder
+│           ├── url_filter.py               ← Junk URL removal
+│           ├── date_normalizer.py          ← Multi-format date parser + range filter
+│           ├── date_filter.py              ← Date filter wrapper
+│           ├── duplicate_remover.py        ← URL norm + fuzzy dedup
+│           ├── relevance_scorer.py         ← 5-signal relevance scorer
+│           └── application_logger.py       ← Phase 2: log apply results
 │
 └── tests/
     ├── __init__.py
@@ -260,9 +220,7 @@ Multi-Agent-Job-Finder/
 | pip | Latest |
 | Git | Latest |
 | Google Gemini API Key | Free — [aistudio.google.com](https://aistudio.google.com) |
-| Playwright (optional) | For dynamic job pages — `playwright install chromium` |
-
-> ⚠️ Playwright is optional but recommended. Static scraping (BeautifulSoup) works without it. Install Playwright only if job pages fail to load with requests alone.
+| Playwright | Required for dynamic scraping + Phase 2 auto-apply |
 
 ---
 
@@ -281,14 +239,14 @@ venv\Scripts\activate           # Windows
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Install Playwright browser (optional — for dynamic scraping)
+# 4. Install Playwright browser (required for Phase 2, recommended for Phase 1)
 playwright install chromium
 
 # 5. Set up environment variables
 cp .env.example .env
 # Open .env and add your GEMINI_API_KEY
 
-# 6. Run the Streamlit app
+# 6. Run the app
 streamlit run app.py
 ```
 
@@ -306,204 +264,118 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 Get your free key at [aistudio.google.com](https://aistudio.google.com/app/apikey)
 
-> ⚠️ **Never commit `.env` to GitHub.** The `.env.example` file is safe to commit — it contains no real values.
+> Never commit `.env` to GitHub. `.env.example` is safe to commit.
 
 ---
 
-## Streamlit UI Guide
-
-### Sidebar — Search Configuration
-
-| Control | Type | Purpose |
-|---|---|---|
-| Gemini API Key | Password Input | Auto-loaded from `.env` — override anytime |
-| Location | Text Input | City or country filter (e.g. "Karachi", "Remote") |
-| Employment Type | Dropdown | Any / Full-time / Remote / Hybrid / On-site / Contract |
-| From Date | Date Picker | Start of job posting date range |
-| To Date | Date Picker | End of job posting date range |
-| Max Job Results | Slider | Maximum jobs to collect (10–100) |
-
-### Progress Tracker
+## How It Works — Phase 1
 
 ```
-✅ Step 1  — Reading resume
-✅ Step 2  — Extracting skills & keywords
-✅ Step 3  — Analyzing resume (AI — 1 call)
-✅ Step 4  — Building search URLs
-✅ Step 5  — Searching job boards
-✅ Step 6  — Filtering junk URLs
-✅ Step 7  — Scraping job details
-✅ Step 8  — Filtering by date range
-✅ Step 9  — Removing duplicates
-✅ Step 10 — Scoring & ranking jobs
+User uploads Resume (PDF / DOCX)
+         ↓
+Stage 1: Resume Reader — pypdf / python-docx → clean text
+         ↓
+Stage 2: Keyword Extractor — regex + 100+ skill dict
+         → skills, years of experience, location, job title
+         ↓
+Stage 3: Single Gemini Call (only LLM call in Phase 1)
+         → candidate role, seniority, 3 search queries, top skills
+         ↓
+Stage 4: Query Optimizer — Python
+         → enhances queries, builds 18 job board URLs
+         ↓
+Stage 5: Job Search Agent — requests + BeautifulSoup
+         → LinkedIn, Rozee.pk, Indeed, Glassdoor, Mustakbil, Google Jobs
+         ↓
+Stage 6: URL Filter — Python
+         → removes GitHub, Medium, YouTube, tutorials, docs
+         ↓
+Stage 7: Job Scraper — BeautifulSoup + Playwright
+         → title, company, location, date, description, employment type
+         ↓
+Stage 8: Date Normalizer + Filter — Python + dateparser
+         → all formats → datetime → From/To date range filter
+         ↓
+Stage 9: Duplicate Remover — Python + rapidfuzz
+         → URL normalization + fuzzy title+company match (85% threshold)
+         ↓
+Stage 10: Relevance Scorer — Python
+         → 5 signals → percentage → sorted descending
+         ↓
+Streamlit shows ranked job cards with match %, source, date, apply link
 ```
-
-### Final Job Cards
-
-Each job displays:
-- **Title** and **Company**
-- **Date Posted** and **Location**
-- **Match %** — color coded (🟢 70%+ / 🟡 40%+ / 🔴 below 40%)
-- **Source board** badge (Rozee.pk, LinkedIn, Indeed, etc.)
-- **View Job** button — opens original posting
-- **Score Breakdown** expander — shows points per signal
 
 ---
 
-## Search Configuration
-
-### How Search Queries Are Built
-
-| Stage | Example |
-|---|---|
-| Raw resume skills | Python, Django, FastAPI, PostgreSQL |
-| LLM-generated query | "Python Developer" |
-| Python-optimized query | "Junior Python Backend Developer Django FastAPI Karachi" |
-| Job board URLs built | 6 boards × 3 queries = 18 search URLs |
-
-### Platforms Searched
-
-| Platform | Method | Notes |
-|---|---|---|
-| Rozee.pk | requests + BeautifulSoup | Major Pakistan job board |
-| Mustakbil.com | requests + BeautifulSoup | Pakistan job board |
-| Indeed | requests + BeautifulSoup | Global job board |
-| LinkedIn | requests (public pages) | Public job listings only |
-| Glassdoor | requests + BeautifulSoup | Global job board |
-| Google Jobs | requests + parsing | Aggregates multiple boards |
-
-### URL Filter Rules
-
-Removed automatically (junk):
-- `github.com` — repositories, not jobs
-- `medium.com`, `dev.to` — tutorials and articles
-- `geeksforgeeks.org`, `w3schools.com` — documentation
-- `youtube.com` — video content
-- `stackoverflow.com` — Q&A, not jobs
-- `reddit.com` — discussion forums
-
-Kept (actual job postings):
-- `linkedin.com/jobs/`
-- `indeed.com/viewjob`
-- `rozee.pk/job/`
-- `mustakbil.com/job-detail/`
-- Company career pages (`/careers/`, `/jobs/`, `careers.`)
-
----
-
-## Date Filtering Algorithm
-
-### Supported Formats
-
-| Format Example | Parsed As |
-|---|---|
-| `August 10, 2026` | Absolute date |
-| `10 Aug 2026` | Absolute date |
-| `2026-08-10` | ISO 8601 date |
-| `Posted 3 days ago` | Today minus 3 days |
-| `Posted yesterday` | Today minus 1 day |
-| `Just now` | Today |
-| No date found | `None` → "Date Not Available" |
-
-### Filter Logic
+## How It Works — Phase 2
 
 ```
-For each scraped job:
-  1. Extract raw date string from HTML
-  2. Try relative pattern match → datetime
-  3. Try absolute strptime (13 formats) → datetime
-  4. Fallback to dateparser library → datetime
-  5. Compare: job_date >= From Date AND job_date <= To Date → Keep
-  6. Outside range → Remove
-  7. Date is None → Keep separately, label "Date Not Available"
-
-Rules:
-  ✅ Never fabricate a date
-  ✅ "Date Not Available" is honest output — not an error
-  ✅ Jobs with unavailable dates shown last, after dated jobs
+User reviews Phase 1 results
+         ↓
+User selects jobs to apply to (checkboxes)
+         ↓
+User fills applicant profile once in UI:
+  → Full name, email, phone, LinkedIn URL
+  → Years of experience, notice period, expected salary
+         ↓
+For each selected job:
+         ↓
+  Cover Letter Generator — 1 Gemini call
+  → Personalizes cover letter for that job + company
+         ↓
+  Apply Agent — Playwright
+  → Opens job application in headless browser
+  → Detects platform (LinkedIn Easy Apply / Indeed / Rozee.pk)
+  → Fills all form fields automatically
+  → Attaches resume PDF
+  → Pastes cover letter
+  → Clicks submit
+         ↓
+  Result Logger:
+  → "Applied"         — confirmation detected
+  → "Failed"          — error or captcha
+  → "Manual Required" — complex multi-step form
+         ↓
+Application log shown in UI + CSV export
 ```
 
 ---
 
 ## Relevance Scoring Algorithm
 
-### Scoring Table
-
-| Signal | Max Points | How Checked |
+| Signal | Max Points | How |
 |---|---|---|
-| Job Title Match | 30 | Candidate role keywords vs job title (partial scoring) |
-| Skill Match | 60 | Top skills from analyzer in job description (20pts each, cap 3) |
-| Keyword Match | 30 | Resume skills in job description (10pts each, cap 3) |
-| Location Match | 10 | Job location vs candidate location (remote always matches) |
-| Seniority Match | 10 | Junior/Mid/Senior signal words in job text |
+| Job Title Match | 30 | Candidate role keywords in job title (partial scoring) |
+| Skill Match | 60 | Top skills from analyzer in description (20pts × 3 max) |
+| Keyword Match | 30 | Resume skills in description (10pts × 3 max) |
+| Location Match | 10 | City match — remote always matches |
+| Seniority Match | 10 | Junior/Mid/Senior signal words |
 | Employment Type | 5 | Remote/Full-time/Hybrid match |
+| **Total** | **145 → 100%** | Sorted descending, date as tiebreaker |
 
-**Maximum possible: 145 points → normalized to 100%**
+---
 
-Sorted by match % descending, then date (newest first) as tiebreaker.
+## Date Filtering Algorithm
+
+| Format | Example | Method |
+|---|---|---|
+| Relative | `3 days ago`, `yesterday`, `just now` | Regex → today minus N days |
+| Long form | `August 10, 2026`, `10 Aug 2026` | strptime (13 formats) |
+| ISO | `2026-08-10` | strptime |
+| Fuzzy | anything else | dateparser library |
+| Not found | — | None → "Date Not Available" |
+
+Jobs with no date shown separately — never fabricated.
 
 ---
 
 ## Duplicate Removal
 
-### Pass 1 — URL Normalization
+**Pass 1 — URL normalization:**
+Strips `utm_*`, `trk`, `fbclid`, `www.`, trailing slashes. Same URL from two queries → second dropped.
 
-```
-https://www.linkedin.com/jobs/view/123?utm_source=google&trk=abc
-http://linkedin.com/jobs/view/123/
-→ Both normalize to: linkedin.com/jobs/view/123
-→ Second is dropped
-```
-
-### Pass 2 — Fuzzy Title + Company Match
-
-```
-Job A: "Python Developer" at "ABC Technologies Pvt Ltd"
-Job B: "Python Developer" at "ABC Technologies"
-→ token_sort_ratio = 89 (above threshold 85)
-→ Job B is a duplicate → removed
-```
-
----
-
-## Job Scraping
-
-### Static Scraping (BeautifulSoup + requests)
-
-```
-GET job_url (with realistic User-Agent headers)
-         ↓
-BeautifulSoup parses HTML
-         ↓
-Board-specific CSS selectors extract:
-  - Job title     → h1.job-title, [data-testid="jobTitle"]
-  - Company       → .company-name, [data-testid="company"]
-  - Location      → .job-location, [data-testid="location"]
-  - Date posted   → time[datetime], .posted-date, .job-age
-  - Description   → .job-description, #job-details
-         ↓
-Generic fallback selectors for unknown boards
-         ↓
-Structured job dict returned
-```
-
-### Dynamic Scraping (Playwright — optional)
-
-Used automatically when static fetch returns no title and no description:
-
-```
-Playwright launches headless Chromium
-         ↓
-Navigates to job URL (20s timeout)
-         ↓
-Waits 2s for JS render
-         ↓
-page.content() → full rendered HTML
-         ↓
-BeautifulSoup parses → same extraction logic
-         ↓
-Browser closed
-```
+**Pass 2 — Fuzzy title + company:**
+`token_sort_ratio` from rapidfuzz. Threshold: 85/100. Handles word order differences across boards.
 
 ---
 
@@ -511,54 +383,51 @@ Browser closed
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| UI | Streamlit | Web interface — upload, filters, results |
-| LLM | Google Gemini (gemini-3.6-flash) | Resume analysis — 1 call per run |
-| PDF Parsing | pypdf | Extract text from PDF resumes |
-| DOCX Parsing | python-docx | Extract text from Word resumes |
-| Static Scraping | requests + BeautifulSoup | Job page HTML extraction |
-| Dynamic Scraping | Playwright | JavaScript-rendered job pages |
-| Date Parsing | dateparser + python-dateutil | Multi-format date normalization |
-| Fuzzy Matching | rapidfuzz | Duplicate detection + title matching |
-| Config | python-dotenv + pydantic-settings | Environment variable management |
-| LLM Framework | langchain + langchain-google-genai | Gemini integration |
+| UI | Streamlit | Local web interface |
+| LLM | Google Gemini (gemini-3.6-flash) | Resume analysis + cover letters |
+| PDF | pypdf | Resume text extraction |
+| DOCX | python-docx | Resume text extraction |
+| Static scraping | requests + BeautifulSoup | Job page extraction |
+| Dynamic scraping + apply | Playwright | JS pages + Phase 2 automation |
+| Date parsing | dateparser + python-dateutil | Multi-format normalization |
+| Fuzzy matching | rapidfuzz | Dedup + title similarity |
+| Config | python-dotenv + pydantic-settings | .env loader |
+| LLM framework | langchain-google-genai | Gemini integration |
 
 ---
 
 ## API Requirements
 
-| API / Service | Required | Cost | Purpose |
+| Service | Required | Cost | Purpose |
 |---|---|---|---|
-| Google Gemini API | ✅ Yes | Free tier available | Resume analysis (1 call/run) |
-| Tavily Search API | ❌ Removed | Was paid | Replaced with Python search |
-| LinkedIn API | ❌ Not needed | — | Public pages scraped directly |
-| Indeed API | ❌ Not needed | — | Public pages scraped directly |
-
-> Only **one** API key is needed — Google Gemini. Everything else is Python.
+| Google Gemini API | ✅ Yes | Free tier available | Phase 1: 1 call/run · Phase 2: 1 call/job |
+| LinkedIn API | ❌ No | — | Public pages only |
+| Indeed API | ❌ No | — | Public pages only |
+| Tavily | ❌ Removed | Was paid | Replaced with Python |
 
 ---
 
 ## Limitations
 
-- **LinkedIn / Indeed rate limits** — These platforms detect and throttle scrapers. The system uses random request delays and realistic User-Agent headers, but heavy usage may trigger blocks. Use responsibly.
-- **Dynamic pages** — Some job boards load content via JavaScript. Playwright handles this automatically but requires a Chromium installation.
-- **Date availability** — Not all job postings include a posting date in their HTML. These are shown as "Date Not Available" — never fabricated.
-- **Pakistan-focused search** — Query optimization is tuned for the Pakistan job market (Rozee.pk, Mustakbil, Karachi, Lahore). Adjust `query_optimizer.py` for other regions.
-- **No authentication** — Only publicly accessible job pages are scraped. LinkedIn full API and Indeed official API are not used.
-- **Single LLM provider** — Currently only Google Gemini is supported. OpenAI or other providers would require changes to `analyzer.py`.
+- **LinkedIn / Indeed rate limiting** — Heavy usage may trigger blocks. System uses random delays and realistic headers.
+- **Captcha on apply** — Phase 2 will hit captcha on some platforms. Logged as "Manual Required".
+- **LinkedIn Easy Apply only** — Phase 2 supports Easy Apply. External application pages need manual apply.
+- **Date availability** — Not all postings include dates. Shown as "Date Not Available" — never fabricated.
+- **Local only** — Runs on your machine. No cloud deployment.
+- **Single LLM provider** — Only Gemini supported currently.
 
 ---
 
 ## Future Improvements
 
-- [ ] Add support for OpenAI and Anthropic as LLM providers
-- [ ] Add Rozee.pk official API integration when available
-- [ ] Email alerts — notify user when new matching jobs are posted
-- [ ] Resume comparison mode — compare two resumes against same job results
-- [ ] Job tracking dashboard — mark jobs as Applied / Saved / Rejected
-- [ ] Salary range filter — filter jobs by mentioned salary
+- [ ] Phase 2: LinkedIn Easy Apply automation (in progress)
+- [ ] Phase 2: Indeed Apply automation (in progress)
+- [ ] Phase 2: Rozee.pk Apply automation (in progress)
+- [ ] Application tracking dashboard (Applied / Saved / Rejected)
+- [ ] Email notification when new matching jobs posted
+- [ ] Salary range filter
 - [ ] Multi-language resume support
-- [ ] Docker deployment
-- [ ] CI/CD pipeline with GitHub Actions
+- [ ] OpenAI / Anthropic as alternative LLM providers
 
 ---
 
